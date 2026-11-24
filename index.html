@@ -9,13 +9,6 @@
     <!-- Three.js & OrbitControls -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <!-- Post-Processing Pipeline for Cinematic Bloom & Film Effects -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Google Fonts -->
@@ -854,39 +847,14 @@
         );
         camera.position.set(isMobileInit ? -13.5 : -11.2, isMobileInit ? 9.5 : 8.6, isMobileInit ? 15.5 : 12.6);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: false });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.35;
-        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMappingExposure = 1.05;
         container.appendChild(renderer.domElement);
-
-        // ============================================================================
-        // POST-PROCESSING: CINEMATIC BLOOM & GLOW PIPELINE
-        // ============================================================================
-        let composer = null;
-        let bloomPass = null;
-        try {
-            if (typeof THREE.EffectComposer === 'function') {
-                composer = new THREE.EffectComposer(renderer);
-                const renderPass = new THREE.RenderPass(scene, camera);
-                composer.addPass(renderPass);
-
-                bloomPass = new THREE.UnrealBloomPass(
-                    new THREE.Vector2(window.innerWidth, window.innerHeight),
-                    0.65,   // bloom strength
-                    0.42,   // radius
-                    0.78    // threshold
-                );
-                composer.addPass(bloomPass);
-            }
-        } catch (e) {
-            console.warn('Post-processing unavailable, falling back to standard rendering', e);
-            composer = null;
-        }
 
         // ============================================================================
         // FLOATING DUST MOTE & COLD AIR PARTICLE SYSTEM
@@ -1004,23 +972,6 @@
         const heatParticlesMesh = new THREE.Points(heatGeometry, heatParticleMat);
         scene.add(heatParticlesMesh);
 
-        // Volumetric Light Cone from ceiling downlights
-        const lightConeGeo = new THREE.ConeGeometry(0.6, 3.5, 16, 1, true);
-        const lightConeMat = new THREE.MeshBasicMaterial({
-            color: 0xfef9c3,
-            transparent: true,
-            opacity: 0.04,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending
-        });
-        [-4.5, -0.7, 3.8].forEach(lx => {
-            const cone = new THREE.Mesh(lightConeGeo, lightConeMat.clone());
-            cone.position.set(lx, 3.6, -4.95);
-            cone.rotation.x = Math.PI;
-            scene.add(cone);
-        });
-
         // Auto-orbit idle timer
         let userInteractionTime = Date.now();
         let autoOrbitActive = false;
@@ -1112,11 +1063,11 @@
         // ============================================================================
         // 3. ARCHITECTURAL LIGHTING SETUP (WARM LUXURY CORPORATE AMBIENCE)
         // ============================================================================
-        const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0x1e293b, 0.88);
+        const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0x1e293b, 0.72);
         hemiLight.position.set(0, 12, 0);
         scene.add(hemiLight);
 
-        const dirLight = new THREE.DirectionalLight(0xfff7ed, 1.35);
+        const dirLight = new THREE.DirectionalLight(0xfff7ed, 1.05);
         dirLight.position.set(-8.5, 14.5, 10.5);
         dirLight.castShadow = true;
         dirLight.shadow.mapSize.width = 2048;
@@ -1131,35 +1082,21 @@
         dirLight.shadow.bias = -0.0004;
         scene.add(dirLight);
 
-        const tableWarmLight = new THREE.PointLight(0xfde68a, 1.05, 16);
+        const tableWarmLight = new THREE.PointLight(0xfde68a, 0.75, 14);
         tableWarmLight.position.set(0, 3.65, 0);
         scene.add(tableWarmLight);
 
-        const tvBacklightGlow = new THREE.PointLight(0xfbbf24, 0.65, 7);
+        const tvBacklightGlow = new THREE.PointLight(0xfbbf24, 0.5, 7);
         tvBacklightGlow.position.set(-1.6, 3.0, -4.75);
         scene.add(tvBacklightGlow);
 
-        const panelSpotLight = new THREE.PointLight(0xe0f2fe, 0.95, 6.5);
+        const panelSpotLight = new THREE.PointLight(0xe0f2fe, 0.8, 6.5);
         panelSpotLight.position.set(4.3, 3.2, -2.2);
         scene.add(panelSpotLight);
 
-        const acCoolGlowLight = new THREE.PointLight(0x38bdf8, 0.75, 8.5);
+        const acCoolGlowLight = new THREE.PointLight(0x38bdf8, 0.65, 8.5);
         acCoolGlowLight.position.set(2.4, 3.9, -4.4);
         scene.add(acCoolGlowLight);
-
-        // Dynamic Accent Neon Edge Lights (Cyber-aesthetic ambient fill)
-        const neonAccentLightL = new THREE.PointLight(0x6366f1, 0.4, 10);
-        neonAccentLightL.position.set(-5.5, 2.5, 0);
-        scene.add(neonAccentLightL);
-
-        const neonAccentLightR = new THREE.PointLight(0x0ea5e9, 0.35, 10);
-        neonAccentLightR.position.set(5.5, 2.5, 3.5);
-        scene.add(neonAccentLightR);
-
-        // Floor reflection bounce light
-        const floorBounceLight = new THREE.PointLight(0xfde68a, 0.25, 12);
-        floorBounceLight.position.set(0, 0.3, 0);
-        scene.add(floorBounceLight);
 
         // ============================================================================
         // 4. EXECUTIVE MEETING ROOM ARCHITECTURE (HIGH-DETAIL REALISTIC INTERIOR)
@@ -1890,33 +1827,6 @@
         spScreen.rotation.x = -Math.PI / 2;
         spScreen.position.set(0, 0.062, 0.04);
         speakerPhoneGroup.add(spScreen);
-
-        // Suspended Architectural Linear LED Chandelier with Suspension Wires
-        const chandelierGroup = new THREE.Group();
-        chandelierGroup.position.set(0, 4.15, 0);
-        tableGroup.add(chandelierGroup);
-
-        const chandelierHousing = new THREE.Mesh(
-            new THREE.BoxGeometry(5.1, 0.09, 0.22),
-            new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.2 })
-        );
-        chandelierGroup.add(chandelierHousing);
-
-        const chandelierDiffuser = new THREE.Mesh(
-            new THREE.BoxGeometry(4.95, 0.03, 0.16),
-            new THREE.MeshBasicMaterial({ color: 0xfef9c3 })
-        );
-        chandelierDiffuser.position.y = -0.04;
-        chandelierGroup.add(chandelierDiffuser);
-
-        [-2.1, 2.1].forEach(wx => {
-            const wire = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.008, 0.008, 1.35, 8),
-                new THREE.MeshBasicMaterial({ color: 0x94a3b8 })
-            );
-            wire.position.set(wx, 0.68, 0);
-            chandelierGroup.add(wire);
-        });
 
         // Laptop Screen Presentation Texture
         function createLaptopScreenTexture() {
@@ -3764,11 +3674,7 @@
             updateFloatingLabelPosition('label-door', anchors.doorCenter);
             updateChairPopupScreenPosition();
 
-            if (composer) {
-                composer.render();
-            } else {
-                renderer.render(scene, camera);
-            }
+            renderer.render(scene, camera);
         }
 
         window.addEventListener('resize', () => {
@@ -3777,7 +3683,6 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            if (composer) composer.setSize(window.innerWidth, window.innerHeight);
         });
 
         window.onload = function () {
