@@ -1,0 +1,3792 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Digital Twin - Smart Meeting Room Setpoint AC Controller</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Post-Processing Pipeline for Cinematic Bloom & Film Effects -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #070b14;
+            color: #f8fafc;
+            user-select: none;
+        }
+        .font-mono-code {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        #canvas-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.84);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+        }
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.4);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(56, 189, 248, 0.45);
+            border-radius: 9999px;
+        }
+        .world-label {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            pointer-events: none;
+            z-index: 10;
+            transition: opacity 0.2s ease;
+        }
+        .world-label-card {
+            padding: 3px 8px;
+            border-radius: 8px;
+            font-size: 10px;
+            line-height: 1.25;
+        }
+        @media (min-width: 640px) {
+            .world-label-card {
+                padding: 4px 10px;
+                font-size: 11px;
+            }
+        }
+        #chair-popup {
+            position: absolute;
+            transform: translate(-50%, -115%);
+            z-index: 30;
+            pointer-events: auto;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 12px rgba(217, 70, 239, 0.45); }
+            50% { box-shadow: 0 0 26px rgba(217, 70, 239, 0.95); }
+        }
+        .ir-active-glow {
+            animation: pulseGlow 0.7s infinite;
+        }
+        @keyframes shimmerBorder {
+            0% { border-color: rgba(56, 189, 248, 0.3); }
+            50% { border-color: rgba(56, 189, 248, 0.7); }
+            100% { border-color: rgba(56, 189, 248, 0.3); }
+        }
+        .glass-panel {
+            animation: shimmerBorder 4s ease-in-out infinite;
+        }
+        @keyframes neonPulse {
+            0%, 100% { text-shadow: 0 0 8px rgba(56, 189, 248, 0.3); }
+            50% { text-shadow: 0 0 20px rgba(56, 189, 248, 0.8), 0 0 40px rgba(56, 189, 248, 0.3); }
+        }
+        .neon-text {
+            animation: neonPulse 3s ease-in-out infinite;
+        }
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .animated-gradient {
+            background: linear-gradient(-45deg, #0f172a, #164e63, #1e1b4b, #0f172a);
+            background-size: 400% 400%;
+            animation: gradientShift 12s ease infinite;
+        }
+    </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden">
+
+    <!-- 3D WebGL Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- 3D World Floating Labels Container -->
+    <div id="labels-container" class="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+        <!-- AC Split Label -->
+        <div id="label-ac" class="world-label">
+            <div class="world-label-card bg-slate-900/90 border border-cyan-400/60 font-semibold text-cyan-300 flex items-center gap-1.5 shadow-xl whitespace-nowrap">
+                <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
+                <span>AC Split (<span id="label-ac-temp">22°C</span> • <span id="label-ac-fan">LOW</span>)</span>
+            </div>
+        </div>
+        <!-- Panel IoT Label -->
+        <div id="label-panel" class="world-label">
+            <div class="world-label-card bg-slate-900/90 border border-fuchsia-400/60 font-semibold text-fuchsia-300 flex items-center gap-1.5 shadow-xl whitespace-nowrap">
+                <span id="label-ir-dot" class="w-1.5 h-1.5 rounded-full bg-fuchsia-400"></span>
+                <span>Panel: ESP32 + IR TX</span>
+            </div>
+        </div>
+        <!-- DHT22 Label -->
+        <div id="label-dht" class="world-label">
+            <div class="world-label-card bg-slate-900/90 border border-amber-400/60 font-semibold text-amber-300 flex items-center gap-1.5 shadow-xl whitespace-nowrap">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>DHT22: <span id="label-dht-val">22.0°C / 48%</span></span>
+            </div>
+        </div>
+        <!-- Automatic Sliding Door Label -->
+        <div id="label-door" class="world-label">
+            <div class="world-label-card bg-slate-900/90 border border-emerald-400/60 font-semibold text-emerald-300 flex items-center gap-1.5 shadow-xl whitespace-nowrap">
+                <span id="door-status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span id="door-status-text">Pintu Kaca (Tertutup)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Interactive Chair Pop-up Menu (Appears above clicked chair in 3D) -->
+    <div id="chair-popup" class="hidden">
+        <div class="glass-panel rounded-2xl p-3.5 w-64 border border-sky-400/60 shadow-2xl text-xs">
+            <div class="flex items-center justify-between border-b border-slate-700/80 pb-2 mb-2.5">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-sky-400" id="popup-chair-dot"></span>
+                    <span class="font-bold text-white text-sm" id="popup-chair-title">Kursi Eksekutif #1</span>
+                </div>
+                <button id="popup-close-btn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="mb-3 space-y-1.5">
+                <div class="flex justify-between text-slate-300">
+                    <span>Status Kursi:</span>
+                    <span id="popup-chair-status" class="font-semibold text-emerald-400">Kosong</span>
+                </div>
+                <div class="flex justify-between text-slate-400 text-[11px]">
+                    <span>Kalor Panas Tubuh:</span>
+                    <span id="popup-chair-heat" class="text-amber-300 font-mono-code">+0.00°C / +0% RH</span>
+                </div>
+                <div class="flex justify-between text-slate-400 text-[11px]">
+                    <span>Respon AC Otomatis:</span>
+                    <span id="popup-chair-ac-resp" class="text-cyan-300 font-mono-code">Standby Setpoint</span>
+                </div>
+            </div>
+            <div id="popup-action-container"></div>
+            <div class="w-3 h-3 bg-slate-900 border-r border-b border-sky-400/60 rotate-45 absolute left-1/2 -bottom-1.5 -translate-x-1/2"></div>
+        </div>
+    </div>
+
+    <!-- Top Navigation & Camera Presets Bar (Clean Non-Overlapping Mobile + Desktop Layout) -->
+    <div class="absolute top-2.5 left-2.5 right-2.5 md:right-[405px] z-20 flex flex-col gap-1.5 pointer-events-none">
+        <!-- Row 1: Brand Title + Mobile Dashboard Toggle Button (Never Overlaps) -->
+        <div class="flex items-center justify-between gap-2">
+            <div class="glass-panel px-3 py-2 rounded-2xl pointer-events-auto flex items-center gap-2.5 min-w-0">
+                <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/25 shrink-0">
+                    <i data-lucide="wind" class="w-4 h-4 text-white"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <h1 class="text-xs sm:text-sm md:text-base font-bold text-white tracking-tight truncate">Smart Meeting Room 3D</h1>
+                        <span class="px-1.5 py-0.5 text-[9px] font-semibold rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shrink-0">Setpoint Loop</span>
+                    </div>
+                    <p class="text-[10px] text-slate-300 hidden sm:block truncate">Klik kursi untuk panggil/keluarkan orang • Aliran Angin AC & Kontrol Setpoint DHT22</p>
+                </div>
+            </div>
+
+            <!-- Mobile Dashboard Toggle Button cleanly aligned to the right -->
+            <button id="toggle-dashboard-btn" onclick="toggleMobileDashboard()" class="md:hidden glass-panel px-3 py-2 rounded-2xl text-xs font-semibold text-sky-300 border border-sky-400/40 flex items-center gap-1.5 pointer-events-auto shrink-0 shadow-lg active:scale-95 transition">
+                <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
+                <span id="toggle-dashboard-text">Dashboard IoT</span>
+            </button>
+        </div>
+
+        <!-- Row 2: Camera Preset Buttons -->
+        <div class="glass-panel p-1 rounded-2xl pointer-events-auto flex items-center gap-1 overflow-x-auto max-w-full">
+            <button onclick="setCameraView('room')" id="cam-room" class="cam-btn px-2.5 py-1.5 rounded-xl text-[11px] font-medium bg-sky-500 text-white shadow flex items-center gap-1.5 shrink-0 transition">
+                <i data-lucide="box" class="w-3.5 h-3.5"></i>
+                <span>View Ruangan</span>
+            </button>
+            <button onclick="setCameraView('wind')" id="cam-wind" class="cam-btn px-2.5 py-1.5 rounded-xl text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800/70 flex items-center gap-1.5 shrink-0 transition">
+                <i data-lucide="wind" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span>Aliran Angin AC</span>
+            </button>
+            <button onclick="setCameraView('panel')" id="cam-panel" class="cam-btn px-2.5 py-1.5 rounded-xl text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800/70 flex items-center gap-1.5 shrink-0 transition">
+                <i data-lucide="circuit-board" class="w-3.5 h-3.5 text-fuchsia-400"></i>
+                <span>Zoom Rangkaian ESP32</span>
+            </button>
+            <button onclick="setCameraView('table')" id="cam-table" class="cam-btn px-2.5 py-1.5 rounded-xl text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800/70 flex items-center gap-1.5 shrink-0 transition">
+                <i data-lucide="users" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Meja Rapat</span>
+            </button>
+            <div class="w-px h-5 bg-slate-700/80 mx-0.5 shrink-0"></div>
+            <button onclick="toggleAudioEngine()" id="audio-toggle-btn" class="px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-400/50 hover:bg-amber-500/30 flex items-center gap-1.5 shrink-0 transition">
+                <i data-lucide="volume-x" id="audio-icon" class="w-3.5 h-3.5"></i>
+                <span id="audio-btn-text">Aktifkan Suara</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Bottom Left Legend -->
+    <div class="absolute bottom-3 left-3 z-20 pointer-events-none hidden lg:flex items-center gap-2">
+        <div class="glass-panel px-4 py-2 rounded-xl pointer-events-auto flex items-center gap-5 text-xs text-slate-300">
+            <span class="flex items-center gap-2">
+                <span class="w-5 h-1.5 rounded-full bg-gradient-to-r from-cyan-400 to-sky-200 inline-block"></span>
+                Gelombang Pita Angin AC (Aerodynamic Streamlines)
+            </span>
+            <span class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-fuchsia-500 inline-block animate-pulse"></span>
+                Sinyal Inframerah Remot (GPIO 14 -> AC)
+            </span>
+            <span class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span>
+                Beban Kalor Orang (+0.85°C / Orang)
+            </span>
+        </div>
+    </div>
+
+    <!-- Right IoT Setpoint & Simulation Dashboard (Drawer on Mobile, Docked Panel on Desktop) -->
+    <aside class="
+        fixed md:absolute top-[104px] md:top-3 bottom-3 right-2.5 left-2.5 md:left-auto md:w-[388px] z-30 flex flex-col pointer-events-none">
+        <div id="dashboard-body" class="hidden md:flex glass-panel rounded-2xl flex-1 flex-col overflow-hidden pointer-events-auto border border-sky-500/30 shadow-2xl">
+            <!-- Header -->
+            <div class="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-slate-100">Kontrol Setpoint & Sensor DHT22</h2>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="ir-tx-badge" class="px-2 py-0.5 rounded-md text-[10px] font-mono-code bg-slate-800 text-slate-400 border border-slate-700 transition">
+                        IR TX: STANDBY
+                    </span>
+                    <button onclick="toggleMobileDashboard()" class="md:hidden text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800/80">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Scrollable Controls -->
+            <div class="p-4 space-y-3.5 overflow-y-auto flex-1">
+
+                <!-- 1. PENGATURAN SETPOINT SUHU RUANGAN (CORE FEATURE) -->
+                <div class="p-3.5 rounded-xl bg-gradient-to-br from-slate-900/95 to-slate-950 border border-cyan-500/35 space-y-3 shadow-inner">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5">
+                            <i data-lucide="target" class="w-4 h-4 text-cyan-400"></i>
+                            <span class="text-xs font-bold text-white">Target Setpoint Ruangan</span>
+                        </div>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                            Saat 0 Orang = Setpoint
+                        </span>
+                    </div>
+
+                    <div class="flex items-center justify-between gap-2 bg-slate-950/90 p-2.5 rounded-xl border border-slate-800">
+                        <div>
+                            <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Suhu Setpoint (Target)</span>
+                            <div class="flex items-baseline gap-1 mt-0.5">
+                                <span id="setpoint-val-ui" class="text-3xl font-bold font-mono-code text-cyan-300">22.0</span>
+                                <span class="text-sm font-bold text-cyan-400">°C</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-1.5">
+                            <button onclick="adjustRoomSetpoint(-0.5)" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-bold text-base border border-slate-700 transition flex items-center justify-center">-</button>
+                            <button onclick="adjustRoomSetpoint(0.5)" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-bold text-base border border-slate-700 transition flex items-center justify-center">+</button>
+                        </div>
+                    </div>
+
+                    <!-- Setpoint Slider -->
+                    <div>
+                        <div class="flex justify-between text-[10px] text-slate-400 mb-1">
+                            <span>Dingin (18°C)</span>
+                            <span>Ideal Rapat (22°C)</span>
+                            <span>Hemat (26°C)</span>
+                        </div>
+                        <input id="setpoint-slider" type="range" min="18" max="26" step="0.5" value="22"
+                            oninput="setRoomSetpointFromSlider(this.value)"
+                            class="w-full accent-cyan-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer">
+                    </div>
+
+                    <p class="text-[11px] text-slate-300 leading-relaxed bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                        <span class="text-cyan-300 font-semibold">Cara Kerja:</span> Saat ruangan kosong (<b>0 orang</b>), suhu stabil di <b>Setpoint (<span id="desc-setpoint">22.0</span>°C)</b> dengan angin <b>LOW</b>. Saat orang masuk, panas tubuh menaikkan suhu DHT22 sehingga ESP32 menembakkan IR agar <b>angin AC makin kencang</b> untuk menekan suhu kembali ke Setpoint!
+                    </p>
+                </div>
+
+                <!-- 2. PEMBACAAN SENSOR DHT22 & KOMPENSASI BEBAN PANAS -->
+                <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="thermometer" class="w-4 h-4 text-amber-400"></i>
+                            <span class="text-xs font-bold text-white">Monitoring Sensor DHT22</span>
+                        </div>
+                        <span id="temp-status-pill" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            Sesuai Setpoint
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <!-- Actual DHT22 Temp -->
+                        <div class="p-2.5 rounded-xl bg-slate-950/90 border border-slate-800">
+                            <div class="text-[10px] text-slate-400 flex justify-between">
+                                <span>SUHU AKTUAL DHT22</span>
+                            </div>
+                            <div class="mt-1 flex items-baseline gap-1">
+                                <span id="dht-temp-ui" class="text-2xl font-bold font-mono-code text-amber-400">22.0</span>
+                                <span class="text-xs font-semibold text-slate-400">°C</span>
+                            </div>
+                            <div class="mt-1 text-[10px] font-mono-code text-slate-400 flex justify-between">
+                                <span>Selisih Setpoint:</span>
+                                <span id="delta-error-ui" class="text-emerald-400 font-semibold">+0.0°C</span>
+                            </div>
+                        </div>
+
+                        <!-- Humidity & Uncompensated Temp -->
+                        <div class="p-2.5 rounded-xl bg-slate-950/90 border border-slate-800">
+                            <div class="text-[10px] text-slate-400 flex justify-between">
+                                <span>KELEMBABAN RUANG</span>
+                            </div>
+                            <div class="mt-1 flex items-baseline gap-1">
+                                <span id="dht-hum-ui" class="text-2xl font-bold font-mono-code text-sky-400">48.0</span>
+                                <span class="text-xs font-semibold text-slate-400">%RH</span>
+                            </div>
+                            <div class="mt-1 text-[10px] font-mono-code text-slate-400 flex justify-between">
+                                <span>Tanpa AC Boost:</span>
+                                <span id="uncomp-temp-ui" class="text-rose-400 font-semibold">22.0°C</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Thermal Progress Comparison Bar -->
+                    <div class="space-y-1 pt-0.5">
+                        <div class="flex justify-between text-[10px] text-slate-400">
+                            <span>Pendinginan Aktif AC vs Beban Kalor Orang</span>
+                            <span id="cooling-power-ui" class="font-mono-code text-cyan-300 font-semibold">Kipas: LOW (650 RPM)</span>
+                        </div>
+                        <div class="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800 p-0.5">
+                            <div id="cooling-effort-bar" class="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-400 to-blue-500 transition-all duration-300" style="width: 25%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2B. MATLAB / SIMULINK REAL-TIME OSCILLOSCOPE & RUMUS KONTROL -->
+                <div class="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-500/35 space-y-2.5 shadow-inner">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5">
+                            <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>
+                            <span class="text-xs font-bold text-white">MATLAB Simulink Scope & RPM</span>
+                        </div>
+                        <span class="px-2 py-0.5 rounded text-[9px] font-mono-code bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            dt = 0.25s • Real-Time
+                        </span>
+                    </div>
+
+                    <!-- Live RPM & Airflow Velocity Readouts -->
+                    <div class="grid grid-cols-3 gap-1.5">
+                        <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                            <span class="text-[9px] text-slate-400 block">BLOWER MOTOR</span>
+                            <div class="flex items-baseline gap-1 mt-0.5">
+                                <span id="ac-rpm-ui" class="text-base font-bold font-mono-code text-emerald-400">650</span>
+                                <span class="text-[9px] font-semibold text-slate-400">RPM</span>
+                            </div>
+                        </div>
+                        <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                            <span class="text-[9px] text-slate-400 block">KECEPATAN ANGIN</span>
+                            <div class="flex items-baseline gap-1 mt-0.5">
+                                <span id="ac-airflow-ui" class="text-base font-bold font-mono-code text-cyan-300">1.4</span>
+                                <span class="text-[9px] font-semibold text-slate-400">m/s</span>
+                            </div>
+                        </div>
+                        <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                            <span class="text-[9px] text-slate-400 block">ERROR e(t)</span>
+                            <div class="flex items-baseline gap-1 mt-0.5">
+                                <span id="pid-error-ui" class="text-base font-bold font-mono-code text-amber-300">+0.00</span>
+                                <span class="text-[9px] font-semibold text-slate-400">°C</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dual-Channel MATLAB Style Oscilloscope Canvas -->
+                    <div class="rounded-xl overflow-hidden border border-slate-700/90 bg-[#060a12] p-1.5 space-y-1">
+                        <div class="flex items-center justify-between text-[9px] font-mono-code px-1">
+                            <span class="text-slate-300 font-semibold">Figure 1: Closed-Loop Response</span>
+                            <div class="flex items-center gap-2">
+                                <span class="text-cyan-300">-- Setpoint</span>
+                                <span class="text-amber-400">━ DHT22 (°C)</span>
+                                <span class="text-emerald-400">━ Blower (RPM)</span>
+                            </div>
+                        </div>
+                        <canvas id="matlab-scope-canvas" width="330" height="175" class="w-full h-[165px] rounded bg-[#050811] block"></canvas>
+                    </div>
+
+                    <!-- Mathematical Formula Card (Collapsible / Compact) -->
+                    <div class="p-2.5 rounded-lg bg-slate-950/95 border border-slate-800 font-mono-code text-[10px] space-y-1 text-slate-300">
+                        <div class="text-cyan-300 font-semibold flex items-center justify-between">
+                            <span>Model Matematis Termal & RPM:</span>
+                            <span id="eta-efficiency-ui" class="text-emerald-400">η = 0%</span>
+                        </div>
+                        <div>1) ΔT_kalor = N_orang × 0.85°C</div>
+                        <div>2) e(t) = T_DHT22(t) - T_Setpoint (Maks ≤ 0.20°C)</div>
+                        <div>3) T_eq = T_Setpoint + min(0.20, ΔT_kalor × (1 - η_RPM))</div>
+                        <div>4) RPM = 650 + Kp·e(t) + 115·N_orang</div>
+                    </div>
+                </div>
+
+                <!-- 3. SIMULASI ORANG MASUK / KELUAR RUANG RAPAT -->
+                <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="users" class="w-4 h-4 text-amber-400"></i>
+                            <span class="text-xs font-bold text-white">Peserta Rapat & Beban Panas</span>
+                        </div>
+                        <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            <span id="people-count-ui">0</span> / 8 Orang (<span id="people-heat-ui">+0.0°C</span>)
+                        </span>
+                    </div>
+
+                    <!-- 8 Chair Mini Interactive Grid -->
+                    <div class="grid grid-cols-4 gap-1.5" id="seat-mini-grid"></div>
+
+                    <!-- Action Buttons -->
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <button onclick="spawnNextPerson()" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow transition active:scale-95">
+                            <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+                            <span>+1 Orang Masuk</span>
+                        </button>
+                        <button onclick="removeLastPerson()" class="px-3 py-2 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow transition active:scale-95">
+                            <i data-lucide="user-minus" class="w-3.5 h-3.5"></i>
+                            <span>-1 Orang Keluar</span>
+                        </button>
+                        <button onclick="fillAllSeats()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-[11px] flex items-center justify-center gap-1 transition border border-slate-700">
+                            <i data-lucide="users" class="w-3 h-3 text-amber-400"></i>
+                            <span>Penuhkan (8 Orang)</span>
+                        </button>
+                        <button onclick="clearAllSeats()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-[11px] flex items-center justify-center gap-1 transition border border-slate-700">
+                            <i data-lucide="user-x" class="w-3 h-3 text-cyan-400"></i>
+                            <span>Kosongkan (0 Orang)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 4. STATUS KOMANDO IR REMOT AC & KECEPATAN ANGIN -->
+                <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="radio" class="w-4 h-4 text-fuchsia-400"></i>
+                            <span class="text-xs font-bold text-white">Komando Remot IR ESP32 -> AC</span>
+                        </div>
+                        <button onclick="fireInfraredSignal('TEST IR PULSE')" class="px-2 py-0.5 rounded bg-fuchsia-500/20 hover:bg-fuchsia-500/30 border border-fuchsia-500/40 text-[10px] font-semibold text-fuchsia-300 flex items-center gap-1 transition">
+                            <i data-lucide="zap" class="w-3 h-3"></i>
+                            <span>Tes Tembak IR</span>
+                        </button>
+                    </div>
+
+                    <!-- Mode Auto vs Manual Override -->
+                    <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-950 border border-slate-800">
+                        <button id="mode-auto-btn" onclick="setControlMode('AUTO')" class="py-1.5 rounded-lg text-xs font-semibold bg-cyan-500 text-slate-950 shadow transition">
+                            Auto Setpoint (DHT22)
+                        </button>
+                        <button id="mode-manual-btn" onclick="setControlMode('MANUAL')" class="py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">
+                            Manual Override
+                        </button>
+                    </div>
+
+                    <!-- AC Internal Compressor Target & Wind Speed -->
+                    <div class="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800/90">
+                        <div>
+                            <span class="text-[10px] text-slate-400 block">Kompensasi Kompresor AC</span>
+                            <div class="flex items-baseline gap-1 mt-0.5">
+                                <span id="ac-internal-temp-ui" class="text-xl font-bold font-mono-code text-cyan-300">22</span>
+                                <span class="text-xs font-semibold text-cyan-400">°C (IR Command)</span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-[10px] text-slate-400 block">Putaran Blower & Kipas</span>
+                            <span id="ac-fan-badge" class="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                                LOW • 650 RPM
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- 4 Fan Speed Levels (LOW, MED, HIGH, TURBO) -->
+                    <div class="grid grid-cols-4 gap-1.5">
+                        <button onclick="manualSetFan('LOW')" id="fan-btn-LOW" class="py-1.5 rounded-lg text-[10px] font-bold bg-cyan-500/25 text-cyan-300 border border-cyan-400 transition">LOW</button>
+                        <button onclick="manualSetFan('MED')" id="fan-btn-MED" class="py-1.5 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 transition">MEDIUM</button>
+                        <button onclick="manualSetFan('HIGH')" id="fan-btn-HIGH" class="py-1.5 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 transition">HIGH</button>
+                        <button onclick="manualSetFan('TURBO')" id="fan-btn-TURBO" class="py-1.5 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 transition">TURBO</button>
+                    </div>
+                </div>
+
+                <!-- 5. SERIAL MONITOR LOG & WIRING PINOUT -->
+                <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="terminal" class="w-4 h-4 text-fuchsia-400"></i>
+                            <span class="text-xs font-bold text-white">Serial Monitor ESP32 & Rangkaian</span>
+                        </div>
+                        <button onclick="setCameraView('panel')" class="text-[11px] text-fuchsia-400 hover:underline font-medium">
+                            Zoom Panel →
+                        </button>
+                    </div>
+
+                    <div id="serial-log" class="h-24 rounded-lg bg-slate-950 p-2 font-mono-code text-[10px] text-emerald-400 overflow-y-auto space-y-1 border border-slate-800">
+                        <div class="text-slate-500">[BOOT] ESP32 Closed-Loop Setpoint AC Controller Ready</div>
+                        <div class="text-cyan-400">[SETPOINT] Target Suhu Ruangan = 22.0°C (0 Orang = Stabil 22.0°C)</div>
+                        <div class="text-fuchsia-400">[HARDWARE] DHT22 -> GPIO 4 | IR LED 940nm -> GPIO 14</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main 3D Architecture, Aerodynamic Wind Ribbons & Closed-Loop Setpoint Script -->
+    <script>
+        lucide.createIcons();
+
+        // ============================================================================
+        // 0. PROCEDURAL WEB AUDIO API ENGINE (AC BLOWER, IR CHIRP, AC BEEP, SLIDING DOOR)
+        // ============================================================================
+        const soundEngine = {
+            ctx: null,
+            enabled: false,
+            masterGain: null,
+            windFilter: null,
+            windGain: null,
+            motorOsc: null,
+            motorGain: null,
+            lastDoorStateOpen: false,
+            lastStepTime: 0,
+
+            init() {
+                if (this.ctx) return;
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+
+                this.ctx = new AudioCtx();
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = 0.65;
+                this.masterGain.connect(this.ctx.destination);
+
+                // 1. Continuous Aerodynamic AC Airflow (Filtered Pink/White Noise)
+                const bufferSize = this.ctx.sampleRate * 2;
+                const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+                for (let i = 0; i < bufferSize; i++) {
+                    const white = Math.random() * 2 - 1;
+                    b0 = 0.99886 * b0 + white * 0.0555179;
+                    b1 = 0.99332 * b1 + white * 0.0750759;
+                    b2 = 0.96900 * b2 + white * 0.1538520;
+                    b3 = 0.86650 * b3 + white * 0.3104856;
+                    b4 = 0.55000 * b4 + white * 0.5329522;
+                    b5 = -0.7616 * b5 - white * 0.0168980;
+                    output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.04;
+                    b6 = white * 0.115926;
+                }
+
+                const whiteNoise = this.ctx.createBufferSource();
+                whiteNoise.buffer = noiseBuffer;
+                whiteNoise.loop = true;
+
+                this.windFilter = this.ctx.createBiquadFilter();
+                this.windFilter.type = 'bandpass';
+                this.windFilter.frequency.value = 280;
+                this.windFilter.Q.value = 0.85;
+
+                this.windGain = this.ctx.createGain();
+                this.windGain.gain.value = 0.0;
+
+                whiteNoise.connect(this.windFilter);
+                this.windFilter.connect(this.windGain);
+                this.windGain.connect(this.masterGain);
+                whiteNoise.start();
+
+                // 2. Subtle AC Cross-Flow Blower Motor Hum (Pitch scales with RPM)
+                this.motorOsc = this.ctx.createOscillator();
+                this.motorOsc.type = 'sine';
+                this.motorOsc.frequency.value = 65;
+
+                this.motorGain = this.ctx.createGain();
+                this.motorGain.gain.value = 0.0;
+
+                this.motorOsc.connect(this.motorGain);
+                this.motorGain.connect(this.masterGain);
+                this.motorOsc.start();
+            },
+
+            toggle() {
+                if (!this.ctx) this.init();
+                if (!this.ctx) return;
+
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+
+                this.enabled = !this.enabled;
+                const btn = document.getElementById('audio-toggle-btn');
+                const txt = document.getElementById('audio-btn-text');
+                const icon = document.getElementById('audio-icon');
+
+                if (this.enabled) {
+                    btn.className = 'px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 hover:bg-emerald-500/35 flex items-center gap-1.5 shrink-0 transition';
+                    txt.textContent = 'Suara: ON';
+                    if (icon) icon.setAttribute('data-lucide', 'volume-2');
+                    lucide.createIcons();
+                    this.playUiClick(780);
+                    appendSerialLog('[AUDIO] Sistem Audio Simulasi Aktif (Blower AC + Beep IR + Pintu)');
+                } else {
+                    btn.className = 'px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-slate-800/90 text-slate-400 border border-slate-700 hover:text-white flex items-center gap-1.5 shrink-0 transition';
+                    txt.textContent = 'Suara: MUTE';
+                    if (icon) icon.setAttribute('data-lucide', 'volume-x');
+                    lucide.createIcons();
+                    if (this.windGain && this.motorGain) {
+                        this.windGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
+                        this.motorGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
+                    }
+                }
+            },
+
+            ensureAutoStartOnInteraction() {
+                if (!this.ctx) {
+                    this.init();
+                    if (this.ctx && this.ctx.state === 'running') {
+                        this.enabled = true;
+                        const btn = document.getElementById('audio-toggle-btn');
+                        const txt = document.getElementById('audio-btn-text');
+                        const icon = document.getElementById('audio-icon');
+                        if (btn && txt) {
+                            btn.className = 'px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 hover:bg-emerald-500/35 flex items-center gap-1.5 shrink-0 transition';
+                            txt.textContent = 'Suara: ON';
+                            if (icon) icon.setAttribute('data-lucide', 'volume-2');
+                            lucide.createIcons();
+                        }
+                    }
+                }
+            },
+
+            updateAcBlowerSound(rpm) {
+                if (!this.enabled || !this.ctx || !this.windGain) return;
+                const now = this.ctx.currentTime;
+                // Normalize RPM (650 to 1650) -> 0.0 to 1.0
+                const norm = Math.max(0, Math.min(1, (rpm - 600) / 1050));
+
+                // Airflow filter cutoff & gain scale smoothly with blower RPM
+                const targetFreq = 240 + norm * 620;
+                const targetWindVol = 0.09 + norm * 0.36;
+                const targetMotorFreq = 58 + norm * 75;
+                const targetMotorVol = 0.015 + norm * 0.045;
+
+                this.windFilter.frequency.setTargetAtTime(targetFreq, now, 0.15);
+                this.windGain.gain.setTargetAtTime(targetWindVol, now, 0.15);
+                this.motorOsc.frequency.setTargetAtTime(targetMotorFreq, now, 0.15);
+                this.motorGain.gain.setTargetAtTime(targetMotorVol, now, 0.15);
+            },
+
+            playIrAndAcBeep() {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+
+                // Part 1: High-tech IR 38kHz carrier pulse chirp from ESP32 GPIO 14
+                for (let i = 0; i < 3; i++) {
+                    const oscIr = this.ctx.createOscillator();
+                    const gainIr = this.ctx.createGain();
+                    oscIr.type = 'square';
+                    oscIr.frequency.setValueAtTime(1650 + i * 220, now + i * 0.035);
+                    gainIr.gain.setValueAtTime(0.035, now + i * 0.035);
+                    gainIr.gain.exponentialRampToValueAtTime(0.001, now + i * 0.035 + 0.028);
+                    oscIr.connect(gainIr);
+                    gainIr.connect(this.masterGain);
+                    oscIr.start(now + i * 0.035);
+                    oscIr.stop(now + i * 0.035 + 0.03);
+                }
+
+                // Part 2: Iconic Split AC Indoor Unit Confirmation "BEEP!" (2050 Hz)
+                const oscAc = this.ctx.createOscillator();
+                const gainAc = this.ctx.createGain();
+                oscAc.type = 'sine';
+                oscAc.frequency.setValueAtTime(2080, now + 0.14);
+                gainAc.gain.setValueAtTime(0.001, now + 0.14);
+                gainAc.gain.linearRampToValueAtTime(0.14, now + 0.155);
+                gainAc.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+                oscAc.connect(gainAc);
+                gainAc.connect(this.masterGain);
+                oscAc.start(now + 0.14);
+                oscAc.stop(now + 0.36);
+            },
+
+            playSlidingDoorWhoosh(isOpening) {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(isOpening ? 140 : 210, now);
+                osc.frequency.exponentialRampToValueAtTime(isOpening ? 240 : 120, now + 0.35);
+
+                gain.gain.setValueAtTime(0.001, now);
+                gain.gain.linearRampToValueAtTime(0.07, now + 0.06);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.4);
+            },
+
+            playFootstep(elapsed) {
+                if (!this.enabled || !this.ctx) return;
+                if (elapsed - this.lastStepTime < 0.34) return;
+                this.lastStepTime = elapsed;
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(115, now);
+                osc.frequency.exponentialRampToValueAtTime(48, now + 0.07);
+
+                gain.gain.setValueAtTime(0.06, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.085);
+            },
+
+            playUiClick(freq = 640) {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now);
+                gain.gain.setValueAtTime(0.05, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.06);
+            }
+        };
+
+        function toggleAudioEngine() {
+            soundEngine.toggle();
+        }
+
+        // ============================================================================
+        // 1. GLOBAL SIMULATION STATE, MATLAB TELEMETRY & CHAIR CONFIGURATIONS
+        // ============================================================================
+        const simState = {
+            roomSetpoint: 22.0,
+            currentTemp: 22.0,
+            uncompensatedTemp: 22.0,
+            currentHumidity: 48.0,
+            acCompressorTemp: 22,
+            acFanSpeed: 'LOW',
+            currentRpm: 650,
+            targetRpm: 650,
+            airflowVelocity: 1.4,
+            mode: 'AUTO',
+            irBeamTimer: 0,
+            doorOpenAmount: 0,
+            selectedChairIndex: null,
+            lastAutoCommandKey: ''
+        };
+
+        const MAX_SCOPE_SAMPLES = 70;
+        const matlabHistory = {
+            setpoint: Array(MAX_SCOPE_SAMPLES).fill(22.0),
+            actualTemp: Array(MAX_SCOPE_SAMPLES).fill(22.0),
+            uncompTemp: Array(MAX_SCOPE_SAMPLES).fill(22.0),
+            rpm: Array(MAX_SCOPE_SAMPLES).fill(650)
+        };
+
+        const chairConfigs = [
+            { id: 1, pos: new THREE.Vector3(-2.55, 0, -1.78), rotY: 0, occupied: false, state: 'empty', avatar: null, laptopLid: null },
+            { id: 2, pos: new THREE.Vector3(-0.85, 0, -1.78), rotY: 0, occupied: false, state: 'empty', avatar: null, laptopLid: null },
+            { id: 3, pos: new THREE.Vector3(0.85, 0, -1.78), rotY: 0, occupied: false, state: 'empty', avatar: null, laptopLid: null },
+            { id: 4, pos: new THREE.Vector3(2.55, 0, -1.78), rotY: 0, occupied: false, state: 'empty', avatar: null, laptopLid: null },
+            { id: 5, pos: new THREE.Vector3(-2.55, 0, 1.78), rotY: Math.PI, occupied: false, state: 'empty', avatar: null, laptopLid: null },
+            { id: 6, pos: new THREE.Vector3(-0.85, 0, 1.78), rotY: Math.PI, occupied: false, state: 'empty', avatar: null, laptopLid: null },
+            { id: 7, pos: new THREE.Vector3(0.85, 0, 1.78), rotY: Math.PI, occupied: false, state: 'empty', avatar: null, laptopLid: null },
+            { id: 8, pos: new THREE.Vector3(2.55, 0, 1.78), rotY: Math.PI, occupied: false, state: 'empty', avatar: null, laptopLid: null }
+        ];
+
+        const chairHitMeshes = [];
+        const chairVisuals = [];
+        const activeAvatars = [];
+
+        const anchors = {
+            acUnit: new THREE.Vector3(2.4, 4.92, -5.0),
+            acFlapOrigin: new THREE.Vector3(2.4, 4.08, -4.96),
+            acIrReceiver: new THREE.Vector3(3.45, 4.18, -4.88),
+            panelBox: new THREE.Vector3(5.65, 4.05, -2.2),
+            dhtSensor: new THREE.Vector3(5.65, 1.95, -2.75),
+            irLedTip: new THREE.Vector3(5.62, 3.34, -2.68),
+            doorCenter: new THREE.Vector3(-5.95, 4.45, 2.85)
+        };
+
+        // ============================================================================
+        // 2. THREE.JS SCENE, CAMERA & RENDERER SETUP
+        // ============================================================================
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x070b14);
+        scene.fog = new THREE.FogExp2(0x070b14, 0.016);
+
+        const isMobileInit = window.innerWidth < 768;
+        const camera = new THREE.PerspectiveCamera(
+            isMobileInit ? 52 : 40,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            100
+        );
+        camera.position.set(isMobileInit ? -13.5 : -11.2, isMobileInit ? 9.5 : 8.6, isMobileInit ? 15.5 : 12.6);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.35;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        container.appendChild(renderer.domElement);
+
+        // ============================================================================
+        // POST-PROCESSING: CINEMATIC BLOOM & GLOW PIPELINE
+        // ============================================================================
+        let composer = null;
+        let bloomPass = null;
+        try {
+            if (typeof THREE.EffectComposer === 'function') {
+                composer = new THREE.EffectComposer(renderer);
+                const renderPass = new THREE.RenderPass(scene, camera);
+                composer.addPass(renderPass);
+
+                bloomPass = new THREE.UnrealBloomPass(
+                    new THREE.Vector2(window.innerWidth, window.innerHeight),
+                    0.65,   // bloom strength
+                    0.42,   // radius
+                    0.78    // threshold
+                );
+                composer.addPass(bloomPass);
+            }
+        } catch (e) {
+            console.warn('Post-processing unavailable, falling back to standard rendering', e);
+            composer = null;
+        }
+
+        // ============================================================================
+        // FLOATING DUST MOTE & COLD AIR PARTICLE SYSTEM
+        // ============================================================================
+        const particleCount = 350;
+        const dustPositions = new Float32Array(particleCount * 3);
+        const dustVelocities = [];
+        const dustSizes = new Float32Array(particleCount);
+        for (let i = 0; i < particleCount; i++) {
+            dustPositions[i * 3] = (Math.random() - 0.5) * 12;
+            dustPositions[i * 3 + 1] = Math.random() * 5.2 + 0.2;
+            dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 10;
+            dustVelocities.push({
+                x: (Math.random() - 0.5) * 0.08,
+                y: (Math.random() - 0.5) * 0.03,
+                z: (Math.random() - 0.5) * 0.06
+            });
+            dustSizes[i] = 2.5 + Math.random() * 4.5;
+        }
+        const dustGeometry = new THREE.BufferGeometry();
+        dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+        dustGeometry.setAttribute('size', new THREE.BufferAttribute(dustSizes, 1));
+
+        // Create soft circular particle texture
+        const dustCanvas = document.createElement('canvas');
+        dustCanvas.width = 64;
+        dustCanvas.height = 64;
+        const dustCanvasCtx = dustCanvas.getContext('2d');
+        const dustGrad = dustCanvasCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        dustGrad.addColorStop(0, 'rgba(186, 230, 253, 0.9)');
+        dustGrad.addColorStop(0.3, 'rgba(56, 189, 248, 0.5)');
+        dustGrad.addColorStop(1, 'rgba(56, 189, 248, 0.0)');
+        dustCanvasCtx.fillStyle = dustGrad;
+        dustCanvasCtx.fillRect(0, 0, 64, 64);
+        const dustTexture = new THREE.CanvasTexture(dustCanvas);
+
+        const dustMaterial = new THREE.PointsMaterial({
+            map: dustTexture,
+            size: 0.08,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            color: 0xbae6fd
+        });
+        const dustParticles = new THREE.Points(dustGeometry, dustMaterial);
+        scene.add(dustParticles);
+
+        // Cold Air Mist Particles (emitted from AC vent)
+        const mistCount = 200;
+        const mistPositions = new Float32Array(mistCount * 3);
+        const mistData = [];
+        for (let i = 0; i < mistCount; i++) {
+            mistPositions[i * 3] = anchors.acFlapOrigin.x + (Math.random() - 0.5) * 2.8;
+            mistPositions[i * 3 + 1] = anchors.acFlapOrigin.y;
+            mistPositions[i * 3 + 2] = anchors.acFlapOrigin.z;
+            mistData.push({
+                life: Math.random(),
+                speed: 0.5 + Math.random() * 1.5,
+                drift: (Math.random() - 0.5) * 0.3
+            });
+        }
+        const mistGeometry = new THREE.BufferGeometry();
+        mistGeometry.setAttribute('position', new THREE.BufferAttribute(mistPositions, 3));
+
+        const mistMaterial = new THREE.PointsMaterial({
+            map: dustTexture,
+            size: 0.18,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.3,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            color: 0x38bdf8
+        });
+        const mistParticles = new THREE.Points(mistGeometry, mistMaterial);
+        scene.add(mistParticles);
+
+        // Heat Shimmer Particles (emitted from people)
+        const heatParticleCount = 80;
+        const heatPositions = new Float32Array(heatParticleCount * 3);
+        const heatParticleData = [];
+        for (let i = 0; i < heatParticleCount; i++) {
+            heatPositions[i * 3] = 0;
+            heatPositions[i * 3 + 1] = -10;
+            heatPositions[i * 3 + 2] = 0;
+            heatParticleData.push({ life: Math.random(), assignedSeat: -1 });
+        }
+        const heatGeometry = new THREE.BufferGeometry();
+        heatGeometry.setAttribute('position', new THREE.BufferAttribute(heatPositions, 3));
+
+        const heatCanvas = document.createElement('canvas');
+        heatCanvas.width = 64;
+        heatCanvas.height = 64;
+        const heatCtxCanvas = heatCanvas.getContext('2d');
+        const heatGradient = heatCtxCanvas.createRadialGradient(32, 32, 0, 32, 32, 32);
+        heatGradient.addColorStop(0, 'rgba(251, 146, 60, 0.8)');
+        heatGradient.addColorStop(0.4, 'rgba(249, 115, 22, 0.4)');
+        heatGradient.addColorStop(1, 'rgba(249, 115, 22, 0.0)');
+        heatCtxCanvas.fillStyle = heatGradient;
+        heatCtxCanvas.fillRect(0, 0, 64, 64);
+        const heatTexture = new THREE.CanvasTexture(heatCanvas);
+
+        const heatParticleMat = new THREE.PointsMaterial({
+            map: heatTexture,
+            size: 0.12,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.5,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            color: 0xfb923c
+        });
+        const heatParticlesMesh = new THREE.Points(heatGeometry, heatParticleMat);
+        scene.add(heatParticlesMesh);
+
+        // Volumetric Light Cone from ceiling downlights
+        const lightConeGeo = new THREE.ConeGeometry(0.6, 3.5, 16, 1, true);
+        const lightConeMat = new THREE.MeshBasicMaterial({
+            color: 0xfef9c3,
+            transparent: true,
+            opacity: 0.04,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        [-4.5, -0.7, 3.8].forEach(lx => {
+            const cone = new THREE.Mesh(lightConeGeo, lightConeMat.clone());
+            cone.position.set(lx, 3.6, -4.95);
+            cone.rotation.x = Math.PI;
+            scene.add(cone);
+        });
+
+        // Auto-orbit idle timer
+        let userInteractionTime = Date.now();
+        let autoOrbitActive = false;
+        renderer.domElement.addEventListener('pointerdown', () => { userInteractionTime = Date.now(); autoOrbitActive = false; });
+        renderer.domElement.addEventListener('wheel', () => { userInteractionTime = Date.now(); autoOrbitActive = false; });
+
+        // Built-in Fallback Orbital Controller in case CDN OrbitControls is blocked
+        function createCameraControls(cam, domElem) {
+            if (typeof THREE.OrbitControls === 'function') {
+                const ctrl = new THREE.OrbitControls(cam, domElem);
+                ctrl.enableDamping = true;
+                ctrl.dampingFactor = 0.06;
+                ctrl.target.set(0.2, 2.3, -0.6);
+                ctrl.maxPolarAngle = Math.PI / 2 - 0.02;
+                ctrl.minDistance = 2.0;
+                ctrl.maxDistance = 28;
+                return ctrl;
+            }
+            // Fallback manual spherical orbit controller
+            const fallback = {
+                target: new THREE.Vector3(0.2, 2.3, -0.6),
+                isDragging: false,
+                prevX: 0,
+                prevY: 0,
+                update: function () {
+                    cam.lookAt(this.target);
+                }
+            };
+            domElem.addEventListener('pointerdown', (e) => {
+                fallback.isDragging = true;
+                fallback.prevX = e.clientX;
+                fallback.prevY = e.clientY;
+            });
+            window.addEventListener('pointerup', () => { fallback.isDragging = false; });
+            window.addEventListener('pointermove', (e) => {
+                if (!fallback.isDragging) return;
+                const dx = (e.clientX - fallback.prevX) * 0.007;
+                const dy = (e.clientY - fallback.prevY) * 0.007;
+                fallback.prevX = e.clientX;
+                fallback.prevY = e.clientY;
+                const offset = cam.position.clone().sub(fallback.target);
+                const sph = new THREE.Spherical().setFromVector3(offset);
+                sph.theta -= dx;
+                sph.phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.04, sph.phi - dy));
+                offset.setFromSpherical(sph);
+                cam.position.copy(fallback.target).add(offset);
+            });
+            return fallback;
+        }
+
+        const controls = createCameraControls(camera, renderer.domElement);
+        let camTransition = null;
+
+        function setCameraView(preset) {
+            const mobile = window.innerWidth < 768;
+            document.querySelectorAll('.cam-btn').forEach(btn => {
+                btn.classList.remove('bg-sky-500', 'text-white', 'shadow');
+                btn.classList.add('text-slate-300');
+            });
+            const activeBtn = document.getElementById('cam-' + preset);
+            if (activeBtn) {
+                activeBtn.classList.add('bg-sky-500', 'text-white', 'shadow');
+                activeBtn.classList.remove('text-slate-300');
+            }
+
+            if (preset === 'room') {
+                camTransition = {
+                    pos: mobile ? new THREE.Vector3(-13.5, 9.5, 15.5) : new THREE.Vector3(-11.2, 8.6, 12.6),
+                    target: new THREE.Vector3(0.2, 2.3, -0.6)
+                };
+            } else if (preset === 'wind') {
+                camTransition = {
+                    pos: mobile ? new THREE.Vector3(-4.8, 4.6, 5.8) : new THREE.Vector3(-3.6, 4.3, 4.2),
+                    target: new THREE.Vector3(1.5, 3.1, -2.5)
+                };
+            } else if (preset === 'panel') {
+                camTransition = {
+                    pos: mobile ? new THREE.Vector3(2.4, 2.75, -2.2) : new THREE.Vector3(3.15, 2.72, -2.2),
+                    target: new THREE.Vector3(5.65, 2.68, -2.2)
+                };
+            } else if (preset === 'table') {
+                camTransition = {
+                    pos: mobile ? new THREE.Vector3(0.0, 7.2, 9.5) : new THREE.Vector3(0.0, 6.2, 7.4),
+                    target: new THREE.Vector3(0.0, 1.4, 0.0)
+                };
+            }
+        }
+
+        // ============================================================================
+        // 3. ARCHITECTURAL LIGHTING SETUP (WARM LUXURY CORPORATE AMBIENCE)
+        // ============================================================================
+        const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0x1e293b, 0.88);
+        hemiLight.position.set(0, 12, 0);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfff7ed, 1.35);
+        dirLight.position.set(-8.5, 14.5, 10.5);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 35;
+        const d = 9.5;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        dirLight.shadow.bias = -0.0004;
+        scene.add(dirLight);
+
+        const tableWarmLight = new THREE.PointLight(0xfde68a, 1.05, 16);
+        tableWarmLight.position.set(0, 3.65, 0);
+        scene.add(tableWarmLight);
+
+        const tvBacklightGlow = new THREE.PointLight(0xfbbf24, 0.65, 7);
+        tvBacklightGlow.position.set(-1.6, 3.0, -4.75);
+        scene.add(tvBacklightGlow);
+
+        const panelSpotLight = new THREE.PointLight(0xe0f2fe, 0.95, 6.5);
+        panelSpotLight.position.set(4.3, 3.2, -2.2);
+        scene.add(panelSpotLight);
+
+        const acCoolGlowLight = new THREE.PointLight(0x38bdf8, 0.75, 8.5);
+        acCoolGlowLight.position.set(2.4, 3.9, -4.4);
+        scene.add(acCoolGlowLight);
+
+        // Dynamic Accent Neon Edge Lights (Cyber-aesthetic ambient fill)
+        const neonAccentLightL = new THREE.PointLight(0x6366f1, 0.4, 10);
+        neonAccentLightL.position.set(-5.5, 2.5, 0);
+        scene.add(neonAccentLightL);
+
+        const neonAccentLightR = new THREE.PointLight(0x0ea5e9, 0.35, 10);
+        neonAccentLightR.position.set(5.5, 2.5, 3.5);
+        scene.add(neonAccentLightR);
+
+        // Floor reflection bounce light
+        const floorBounceLight = new THREE.PointLight(0xfde68a, 0.25, 12);
+        floorBounceLight.position.set(0, 0.3, 0);
+        scene.add(floorBounceLight);
+
+        // ============================================================================
+        // 4. EXECUTIVE MEETING ROOM ARCHITECTURE (HIGH-DETAIL REALISTIC INTERIOR)
+        // ============================================================================
+        const roomGroup = new THREE.Group();
+        scene.add(roomGroup);
+
+        // Procedural Luxury Warm Oak Herringbone / Plank Parquet Floor Texture
+        function createTileFloorTexture() {
+            const c = document.createElement('canvas');
+            c.width = 1024;
+            c.height = 1024;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#3d281a';
+            ctx.fillRect(0, 0, 1024, 1024);
+
+            const plankW = 256;
+            const plankH = 64;
+            const palettes = ['#4a3222', '#543927', '#3f2a1d', '#5c3f2b', '#462f20'];
+
+            for (let row = 0; row < 1024 / plankH; row++) {
+                const offset = (row % 2) * (plankW / 2);
+                for (let col = -1; col < 1024 / plankW + 1; col++) {
+                    const x = col * plankW + offset;
+                    const y = row * plankH;
+                    ctx.fillStyle = palettes[(row * 3 + col + 10) % palettes.length];
+                    ctx.fillRect(x + 2, y + 2, plankW - 4, plankH - 4);
+
+                    // Subtle wood grain fibers on each plank
+                    ctx.strokeStyle = 'rgba(24, 13, 6, 0.22)';
+                    ctx.lineWidth = 1.5;
+                    for (let g = 0; g < 5; g++) {
+                        ctx.beginPath();
+                        const gy = y + 8 + g * 11;
+                        ctx.moveTo(x + 4, gy);
+                        ctx.bezierCurveTo(x + 80, gy + 3, x + 170, gy - 3, x + plankW - 4, gy);
+                        ctx.stroke();
+                    }
+
+                    // Bevel highlight
+                    ctx.strokeStyle = 'rgba(255, 235, 205, 0.05)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x + 2, y + 2, plankW - 4, plankH - 4);
+                }
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(3, 3);
+            return tex;
+        }
+
+        // Procedural Rich American Walnut Wood Grain Texture for Table & Credenza
+        function createWalnutWoodTexture() {
+            const c = document.createElement('canvas');
+            c.width = 512;
+            c.height = 512;
+            const ctx = c.getContext('2d');
+            const grad = ctx.createLinearGradient(0, 0, 512, 512);
+            grad.addColorStop(0, '#3b1d0e');
+            grad.addColorStop(0.5, '#522814');
+            grad.addColorStop(1, '#2e1509');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 512, 512);
+
+            ctx.strokeStyle = 'rgba(18, 7, 2, 0.35)';
+            for (let i = 0; i < 110; i++) {
+                ctx.lineWidth = 1 + (i % 3);
+                ctx.beginPath();
+                const y = (i / 110) * 512;
+                ctx.moveTo(0, y);
+                ctx.bezierCurveTo(170, y + Math.sin(i) * 12, 340, y - Math.sin(i) * 12, 512, y);
+                ctx.stroke();
+            }
+            return new THREE.CanvasTexture(c);
+        }
+        const walnutTex = createWalnutWoodTexture();
+
+        // Procedural Calacatta White Marble Vein Texture for Credenza & Table Center Inlay
+        function createCalacattaMarbleTexture() {
+            const c = document.createElement('canvas');
+            c.width = 512;
+            c.height = 512;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, 512, 512);
+
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.32)';
+            for (let v = 0; v < 18; v++) {
+                ctx.lineWidth = 1 + (v % 3) * 1.2;
+                ctx.beginPath();
+                let x = (v * 47) % 512;
+                let y = 0;
+                ctx.moveTo(x, y);
+                while (y < 512) {
+                    x += Math.sin(y * 0.03 + v) * 18;
+                    y += 32;
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+            return new THREE.CanvasTexture(c);
+        }
+        const marbleTex = createCalacattaMarbleTexture();
+
+        // Base Architectural Foundation Platform + Warm Hardwood Floor Slab
+        const subFoundation = new THREE.Mesh(
+            new THREE.BoxGeometry(12.68, 0.18, 11.48),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7, metalness: 0.2 })
+        );
+        subFoundation.position.set(0, -0.34, 0);
+        roomGroup.add(subFoundation);
+
+        const floorSlab = new THREE.Mesh(
+            new THREE.BoxGeometry(12.4, 0.3, 11.2),
+            new THREE.MeshStandardMaterial({ map: createTileFloorTexture(), roughness: 0.38, metalness: 0.08 })
+        );
+        floorSlab.position.set(0, -0.15, 0);
+        floorSlab.receiveShadow = true;
+        roomGroup.add(floorSlab);
+
+        // Luxury Designer Geometric Wool Rug Under Meeting Table
+        function createCarpetTexture() {
+            const c = document.createElement('canvas');
+            c.width = 512;
+            c.height = 512;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, 512, 512);
+
+            // Subtle geometric border & weave
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 512; i += 6) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0); ctx.lineTo(i, 512);
+                ctx.stroke();
+            }
+            ctx.strokeStyle = 'rgba(217, 119, 6, 0.35)';
+            ctx.lineWidth = 10;
+            ctx.strokeRect(22, 22, 468, 468);
+            const t = new THREE.CanvasTexture(c);
+            return t;
+        }
+
+        const carpetRug = new THREE.Mesh(
+            new THREE.BoxGeometry(8.9, 0.028, 5.8),
+            new THREE.MeshStandardMaterial({ map: createCarpetTexture(), roughness: 0.94 })
+        );
+        carpetRug.position.set(0, 0.014, 0);
+        carpetRug.receiveShadow = true;
+        roomGroup.add(carpetRug);
+
+        const carpetBorder = new THREE.Mesh(
+            new THREE.BoxGeometry(9.06, 0.016, 5.96),
+            new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.45, metalness: 0.5 })
+        );
+        carpetBorder.position.set(0, 0.008, 0);
+        roomGroup.add(carpetBorder);
+
+        // Back Wall (North, Z = -5.5) & Right Wall (East, X = +6.05) in Warm Architectural Alabaster
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.68 });
+        const darkTrimMat = new THREE.MeshStandardMaterial({ color: 0x182232, roughness: 0.35, metalness: 0.45 });
+        const brassAccentMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.28, metalness: 0.82 });
+
+        const backWall = new THREE.Mesh(new THREE.BoxGeometry(12.4, 5.6, 0.3), wallMat);
+        backWall.position.set(0, 2.8, -5.45);
+        backWall.receiveShadow = true;
+        roomGroup.add(backWall);
+
+        const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5.6, 11.2), wallMat);
+        rightWall.position.set(6.05, 2.8, 0);
+        rightWall.receiveShadow = true;
+        roomGroup.add(rightWall);
+
+        // Acoustic Felt Wainscoting Panels & Brass Trim along Back Right & East Wall
+        const acousticPanelMat = new THREE.MeshStandardMaterial({ color: 0xe2ddd5, roughness: 0.85 });
+        for (let i = 0; i < 4; i++) {
+            const wPanel = new THREE.Mesh(new THREE.BoxGeometry(0.03, 2.4, 2.1), acousticPanelMat);
+            wPanel.position.set(5.88, 2.55, -4.0 + i * 2.5);
+            wPanel.receiveShadow = true;
+            roomGroup.add(wPanel);
+        }
+
+        // Baseboard skirting + Warm Indirect LED Cove Strip along Back & Right walls
+        const backSkirting = new THREE.Mesh(new THREE.BoxGeometry(12.2, 0.16, 0.06), darkTrimMat);
+        backSkirting.position.set(0, 0.08, -5.28);
+        roomGroup.add(backSkirting);
+
+        const rightSkirting = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 11.0), darkTrimMat);
+        rightSkirting.position.set(5.88, 0.08, 0);
+        roomGroup.add(rightSkirting);
+
+        // Coffered Ceiling Soffit Cornice, Warm Cove LEDs & Recessed Downlights
+        const backCornice = new THREE.Mesh(new THREE.BoxGeometry(12.4, 0.26, 0.85), darkTrimMat);
+        backCornice.position.set(0, 5.47, -5.05);
+        roomGroup.add(backCornice);
+
+        const backCoveLed = new THREE.Mesh(
+            new THREE.BoxGeometry(12.0, 0.035, 0.05),
+            new THREE.MeshBasicMaterial({ color: 0xfef08a })
+        );
+        backCoveLed.position.set(0, 5.33, -4.64);
+        roomGroup.add(backCoveLed);
+
+        const rightCornice = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.26, 11.2), darkTrimMat);
+        rightCornice.position.set(5.65, 5.47, 0);
+        roomGroup.add(rightCornice);
+
+        const rightCoveLed = new THREE.Mesh(
+            new THREE.BoxGeometry(0.05, 0.035, 10.8),
+            new THREE.MeshBasicMaterial({ color: 0xfef08a })
+        );
+        rightCoveLed.position.set(5.24, 5.33, 0);
+        roomGroup.add(rightCoveLed);
+
+        [-4.5, -2.6, -0.7, 1.2, 3.8].forEach(lx => {
+            const bezel = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.02, 18), darkTrimMat);
+            bezel.position.set(lx, 5.34, -4.95);
+            roomGroup.add(bezel);
+            const downlight = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.11, 0.11, 0.03, 18),
+                new THREE.MeshBasicMaterial({ color: 0xfffbeb })
+            );
+            downlight.position.set(lx, 5.33, -4.95);
+            roomGroup.add(downlight);
+        });
+
+        // Acoustic Wood-Slat Feature Wall + Calacatta Marble TV Backdrop + Warm LED Edge Strips
+        const woodSlatMat = new THREE.MeshStandardMaterial({ map: walnutTex, roughness: 0.42 });
+        const woodBacking = new THREE.Mesh(
+            new THREE.BoxGeometry(6.4, 5.3, 0.05),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 })
+        );
+        woodBacking.position.set(-1.6, 2.75, -5.28);
+        roomGroup.add(woodBacking);
+
+        for (let i = 0; i < 32; i++) {
+            const slat = new THREE.Mesh(new THREE.BoxGeometry(0.11, 5.3, 0.09), woodSlatMat);
+            slat.position.set(-4.7 + i * 0.2, 2.75, -5.23);
+            slat.castShadow = true;
+            roomGroup.add(slat);
+        }
+
+        // Luxury Calacatta Marble Center Feature Slab behind Smart TV with Warm Backlight Halo
+        const tvMarbleSlab = new THREE.Mesh(
+            new THREE.BoxGeometry(4.35, 3.15, 0.06),
+            new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.22, metalness: 0.05 })
+        );
+        tvMarbleSlab.position.set(-1.6, 2.95, -5.18);
+        tvMarbleSlab.receiveShadow = true;
+        roomGroup.add(tvMarbleSlab);
+
+        const tvHaloGlow = new THREE.Mesh(
+            new THREE.PlaneGeometry(4.48, 3.26),
+            new THREE.MeshBasicMaterial({ color: 0xfde68a, transparent: true, opacity: 0.42 })
+        );
+        tvHaloGlow.position.set(-1.6, 2.95, -5.20);
+        roomGroup.add(tvHaloGlow);
+
+        // Floating Designer Media Console Cabinet under the 85" Smart TV + Poly Studio Video Soundbar
+        const tvConsole = new THREE.Mesh(
+            new THREE.BoxGeometry(4.6, 0.46, 0.54),
+            new THREE.MeshStandardMaterial({ map: walnutTex, roughness: 0.35 })
+        );
+        tvConsole.position.set(-1.6, 0.52, -4.98);
+        tvConsole.castShadow = true;
+        roomGroup.add(tvConsole);
+
+        const consoleTop = new THREE.Mesh(
+            new THREE.BoxGeometry(4.66, 0.04, 0.58),
+            new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.18, metalness: 0.08 })
+        );
+        consoleTop.position.set(-1.6, 0.77, -4.98);
+        roomGroup.add(consoleTop);
+
+        const consoleUnderLed = new THREE.Mesh(
+            new THREE.BoxGeometry(4.2, 0.02, 0.1),
+            new THREE.MeshBasicMaterial({ color: 0xfef08a })
+        );
+        consoleUnderLed.position.set(-1.6, 0.28, -4.85);
+        roomGroup.add(consoleUnderLed);
+
+        // Video Conferencing Soundbar & PTZ Camera mounted below Smart TV
+        const soundbar = new THREE.Mesh(
+            new THREE.BoxGeometry(1.35, 0.11, 0.12),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.7, roughness: 0.25 })
+        );
+        soundbar.position.set(-1.6, 1.58, -5.06);
+        roomGroup.add(soundbar);
+
+        const cameraLens = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.038, 0.038, 0.14, 16),
+            new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.9, roughness: 0.1 })
+        );
+        cameraLens.rotation.x = Math.PI / 2;
+        cameraLens.position.set(-1.6, 1.58, -5.05);
+        roomGroup.add(cameraLens);
+
+        // Executive Refreshment Credenza Sideboard + Coffee Machine on Right Wall (X = 5.4, Z = 2.0)
+        const credenzaGroup = new THREE.Group();
+        credenzaGroup.position.set(5.48, 0, 2.1);
+        roomGroup.add(credenzaGroup);
+
+        const credenzaBody = new THREE.Mesh(
+            new THREE.BoxGeometry(0.75, 0.86, 2.8),
+            new THREE.MeshStandardMaterial({ map: walnutTex, roughness: 0.36 })
+        );
+        credenzaBody.position.y = 0.46;
+        credenzaBody.castShadow = true;
+        credenzaGroup.add(credenzaBody);
+
+        // Brass Cabinet Door Handles on Credenza
+        [-0.85, -0.25, 0.35, 0.95].forEach(hz => {
+            const handle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.22, 0.03), brassAccentMat);
+            handle.position.set(-0.39, 0.52, hz);
+            credenzaGroup.add(handle);
+        });
+
+        const credenzaMarble = new THREE.Mesh(
+            new THREE.BoxGeometry(0.8, 0.05, 2.86),
+            new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.16 })
+        );
+        credenzaMarble.position.y = 0.91;
+        credenzaGroup.add(credenzaMarble);
+
+        // Espresso Coffee Maker + Glass Water Carafe on Credenza
+        const coffeeMaker = new THREE.Mesh(
+            new THREE.BoxGeometry(0.42, 0.46, 0.36),
+            new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.75, roughness: 0.22 })
+        );
+        coffeeMaker.position.set(0, 1.16, -0.75);
+        credenzaGroup.add(coffeeMaker);
+
+        const coffeeNozzle = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.06, 0.06, 0.15, 12),
+            new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9, roughness: 0.15 })
+        );
+        coffeeNozzle.position.set(-0.14, 1.12, -0.75);
+        credenzaGroup.add(coffeeNozzle);
+
+        // Cup Tray & Cups on Credenza
+        for (let c = 0; c < 4; c++) {
+            const miniCup = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.055, 0.045, 0.11, 12),
+                new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 })
+            );
+            miniCup.position.set(-0.05, 0.99, -0.15 + c * 0.22);
+            credenzaGroup.add(miniCup);
+        }
+
+        // Framed Minimalist Abstract Corporate Artwork & Analog Clock above Credenza
+        function createAbstractArtTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 320;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, 256, 320);
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath(); ctx.arc(128, 140, 72, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#d97706';
+            ctx.beginPath(); ctx.arc(165, 195, 48, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 6;
+            ctx.beginPath(); ctx.moveTo(36, 260); ctx.lineTo(220, 75); ctx.stroke();
+            return new THREE.CanvasTexture(c);
+        }
+
+        const artFrame = new THREE.Mesh(
+            new THREE.BoxGeometry(0.05, 1.45, 1.15),
+            brassAccentMat
+        );
+        artFrame.position.set(5.86, 2.75, 2.1);
+        roomGroup.add(artFrame);
+
+        const artCanvasMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.06, 1.36),
+            new THREE.MeshStandardMaterial({ map: createAbstractArtTexture(), roughness: 0.4 })
+        );
+        artCanvasMesh.rotation.y = -Math.PI / 2;
+        artCanvasMesh.position.set(5.83, 2.75, 2.1);
+        roomGroup.add(artCanvasMesh);
+
+        const clockGroup = new THREE.Group();
+        clockGroup.position.set(5.86, 4.35, 2.1);
+        clockGroup.rotation.y = -Math.PI / 2;
+        roomGroup.add(clockGroup);
+
+        const clockRim = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.36, 0.36, 0.05, 28),
+            brassAccentMat
+        );
+        clockRim.rotation.x = Math.PI / 2;
+        clockGroup.add(clockRim);
+
+        const clockFace = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.32, 0.32, 0.06, 28),
+            new THREE.MeshBasicMaterial({ color: 0xf8fafc })
+        );
+        clockFace.rotation.x = Math.PI / 2;
+        clockGroup.add(clockFace);
+
+        // Clock Hands
+        const hourHand = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.18, 0.02), darkTrimMat);
+        hourHand.position.set(0, 0.06, 0.04);
+        clockGroup.add(hourHand);
+
+        const minHand = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 0.02), darkTrimMat);
+        minHand.position.set(0.08, 0, 0.04);
+        clockGroup.add(minHand);
+
+        // Left Partition Wall with Glass Sliding Entrance Door (West, X = -6.05)
+        const leftWallRear = new THREE.Mesh(new THREE.BoxGeometry(0.28, 5.6, 6.2), wallMat);
+        leftWallRear.position.set(-6.05, 2.8, -2.5);
+        leftWallRear.receiveShadow = true;
+        roomGroup.add(leftWallRear);
+
+        const leftWallHeader = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.35, 5.0), wallMat);
+        leftWallHeader.position.set(-6.05, 4.92, 3.1);
+        roomGroup.add(leftWallHeader);
+
+        // Aluminum Mullion Frame around Glass Entrance
+        const doorHeaderBeam = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 5.0), darkTrimMat);
+        doorHeaderBeam.position.set(-6.05, 4.22, 3.1);
+        roomGroup.add(doorHeaderBeam);
+
+        // Fixed Glass Partition + Frosted Privacy Band + Animated Sliding Glass Door
+        const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.75, roughness: 0.25 });
+        const glassMat = new THREE.MeshPhysicalMaterial({
+            color: 0xe0f2fe,
+            transparent: true,
+            opacity: 0.26,
+            roughness: 0.08,
+            metalness: 0.1
+        });
+        const frostedStripeMat = new THREE.MeshBasicMaterial({
+            color: 0xe2e8f0,
+            transparent: true,
+            opacity: 0.45,
+            side: THREE.DoubleSide
+        });
+
+        const fixedGlass = new THREE.Mesh(new THREE.BoxGeometry(0.08, 4.2, 2.3), glassMat);
+        fixedGlass.position.set(-6.05, 2.1, 4.4);
+        roomGroup.add(fixedGlass);
+
+        const fixedFrost = new THREE.Mesh(new THREE.PlaneGeometry(2.28, 0.45), frostedStripeMat);
+        fixedFrost.position.set(-5.99, 1.55, 4.4);
+        fixedFrost.rotation.y = Math.PI / 2;
+        roomGroup.add(fixedFrost);
+
+        const slidingDoorGroup = new THREE.Group();
+        slidingDoorGroup.position.set(-5.98, 2.1, 2.85);
+        roomGroup.add(slidingDoorGroup);
+
+        const doorGlassPane = new THREE.Mesh(new THREE.BoxGeometry(0.08, 4.15, 2.2), glassMat);
+        slidingDoorGroup.add(doorGlassPane);
+
+        const doorFrost = new THREE.Mesh(new THREE.PlaneGeometry(2.18, 0.45), frostedStripeMat);
+        doorFrost.position.set(0.05, -0.55, 0);
+        doorFrost.rotation.y = Math.PI / 2;
+        slidingDoorGroup.add(doorFrost);
+
+        const doorHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.75, 12), frameMat);
+        doorHandle.position.set(0.07, 0, 0.75);
+        slidingDoorGroup.add(doorHandle);
+
+        // Interactive Glass Whiteboard on Left Rear Wall with Architectural IoT Diagram
+        function createWhiteboardCanvasTex() {
+            const c = document.createElement('canvas');
+            c.width = 512;
+            c.height = 280;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, 512, 280);
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 6;
+            ctx.strokeRect(4, 4, 504, 272);
+
+            ctx.fillStyle = '#0f172a';
+            ctx.font = 'bold 18px Inter, sans-serif';
+            ctx.fillText('AGENDA RAPAT & TOPOLOGI SMART HVAC ESP32', 24, 36);
+
+            // Diagram boxes on whiteboard
+            ctx.strokeStyle = '#0284c7';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(28, 65, 125, 70);
+            ctx.fillStyle = '#0369a1';
+            ctx.font = 'bold 14px monospace';
+            ctx.fillText('SENSOR DHT22', 40, 95);
+            ctx.fillText('GPIO 4 (Data)', 40, 118);
+
+            ctx.strokeStyle = '#7c3aed';
+            ctx.strokeRect(195, 65, 130, 70);
+            ctx.fillStyle = '#6d28d9';
+            ctx.fillText('ESP32 DEVKIT', 210, 95);
+            ctx.fillText('PID Setpoint', 210, 118);
+
+            ctx.strokeStyle = '#db2777';
+            ctx.strokeRect(365, 65, 120, 70);
+            ctx.fillStyle = '#be185d';
+            ctx.fillText('IR TX 940nm', 378, 95);
+            ctx.fillText('GPIO 14 -> AC', 378, 118);
+
+            // Arrows
+            ctx.strokeStyle = '#475569';
+            ctx.beginPath();
+            ctx.moveTo(153, 100); ctx.lineTo(195, 100);
+            ctx.moveTo(325, 100); ctx.lineTo(365, 100);
+            ctx.stroke();
+
+            // Bullet points
+            ctx.fillStyle = '#334155';
+            ctx.font = '14px Inter, sans-serif';
+            ctx.fillText('• Target Setpoint: 22.0°C (Ruang Kosong -> Kipas LOW 650 RPM)', 28, 175);
+            ctx.fillText('• Kompensasi Kalor: +0.85°C per Peserta Rapat yang Masuk', 28, 202);
+            ctx.fillText('• Umpan Balik Otomatis: Tembak Sinyal IR -> Naikkan RPM Blower', 28, 229);
+
+            return new THREE.CanvasTexture(c);
+        }
+
+        const whiteboard = new THREE.Mesh(
+            new THREE.BoxGeometry(0.06, 1.78, 3.15),
+            new THREE.MeshStandardMaterial({ map: createWhiteboardCanvasTex(), roughness: 0.15, metalness: 0.05 })
+        );
+        whiteboard.position.set(-5.88, 2.75, -2.4);
+        roomGroup.add(whiteboard);
+
+        // Marker Tray & Markers on Whiteboard
+        const markerTray = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 1.2), darkTrimMat);
+        markerTray.position.set(-5.82, 1.84, -2.4);
+        roomGroup.add(markerTray);
+
+        // 85" Smart Presentation TV on Back Acoustic Wall
+        const tvCanvas = document.createElement('canvas');
+        tvCanvas.width = 640;
+        tvCanvas.height = 360;
+        const tvCtx = tvCanvas.getContext('2d');
+        const tvTexture = new THREE.CanvasTexture(tvCanvas);
+
+        const tvBezel = new THREE.Mesh(
+            new THREE.BoxGeometry(3.9, 2.25, 0.12),
+            new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.3, metalness: 0.6 })
+        );
+        tvBezel.position.set(-1.6, 2.95, -5.14);
+        roomGroup.add(tvBezel);
+
+        const tvScreen = new THREE.Mesh(
+            new THREE.PlaneGeometry(3.72, 2.08),
+            new THREE.MeshBasicMaterial({ map: tvTexture })
+        );
+        tvScreen.position.set(-1.6, 2.95, -5.07);
+        roomGroup.add(tvScreen);
+
+        function updatePresentationTvCanvas() {
+            if (!tvCtx) return;
+            tvCtx.fillStyle = '#070b14';
+            tvCtx.fillRect(0, 0, 640, 360);
+
+            tvCtx.strokeStyle = '#1e293b';
+            tvCtx.lineWidth = 4;
+            tvCtx.strokeRect(12, 12, 616, 336);
+
+            tvCtx.fillStyle = '#38bdf8';
+            tvCtx.font = 'bold 20px Inter, sans-serif';
+            tvCtx.fillText('SMART MEETING ROOM • CLOSED-LOOP HVAC MONITOR', 32, 48);
+
+            // Setpoint Box
+            tvCtx.fillStyle = '#0f172a';
+            tvCtx.fillRect(32, 72, 275, 130);
+            tvCtx.strokeStyle = '#0284c7';
+            tvCtx.lineWidth = 2;
+            tvCtx.strokeRect(32, 72, 275, 130);
+
+            tvCtx.fillStyle = '#94a3b8';
+            tvCtx.font = 'bold 14px Inter, sans-serif';
+            tvCtx.fillText('TARGET SETPOINT (0 ORANG)', 50, 102);
+            tvCtx.fillStyle = '#38bdf8';
+            tvCtx.font = 'bold 46px JetBrains Mono, monospace';
+            tvCtx.fillText(`${simState.roomSetpoint.toFixed(2)}°C`, 46, 165);
+
+            // Actual DHT22 Box
+            tvCtx.fillStyle = '#0f172a';
+            tvCtx.fillRect(333, 72, 275, 130);
+            tvCtx.strokeStyle = '#f59e0b';
+            tvCtx.lineWidth = 2;
+            tvCtx.strokeRect(333, 72, 275, 130);
+
+            tvCtx.fillStyle = '#94a3b8';
+            tvCtx.font = 'bold 14px Inter, sans-serif';
+            tvCtx.fillText('SUHU AKTUAL SENSOR DHT22', 351, 102);
+            tvCtx.fillStyle = '#fbbf24';
+            tvCtx.font = 'bold 46px JetBrains Mono, monospace';
+            tvCtx.fillText(`${simState.currentTemp.toFixed(2)}°C`, 347, 165);
+
+            // Bottom Status Bar on TV
+            const peopleCount = chairConfigs.filter(c => c.occupied).length;
+            tvCtx.fillStyle = '#0f172a';
+            tvCtx.fillRect(32, 224, 576, 100);
+            tvCtx.strokeStyle = '#334155';
+            tvCtx.strokeRect(32, 224, 576, 100);
+
+            tvCtx.fillStyle = '#e2e8f0';
+            tvCtx.font = 'bold 16px Inter, sans-serif';
+            tvCtx.fillText(`PESERTA RAPAT: ${peopleCount} / 8 ORANG  |  KECEPATAN ANGIN AC: ${simState.acFanSpeed} (${Math.round(simState.currentRpm)} RPM)`, 50, 260);
+
+            tvCtx.fillStyle = '#34d399';
+            tvCtx.font = '15px JetBrains Mono, monospace';
+            tvCtx.fillText(`ESP32 IR TX -> Set Kompresor: ${simState.acCompressorTemp}°C | Aliran: ${simState.airflowVelocity.toFixed(1)} m/s | RH: ${simState.currentHumidity.toFixed(0)}%`, 50, 298);
+
+            tvTexture.needsUpdate = true;
+        }
+        updatePresentationTvCanvas();
+
+        // Decorative Designer Fiddle-Leaf Fig & Monstera Plants in Ceramic Fluted Planters
+        function createPottedPlant(x, z) {
+            const pGroup = new THREE.Group();
+            pGroup.position.set(x, 0, z);
+            const pot = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.38, 0.28, 0.68, 20),
+                new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.25 })
+            );
+            pot.position.y = 0.34;
+            pot.castShadow = true;
+            pGroup.add(pot);
+
+            const brassRim = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.39, 0.39, 0.04, 20),
+                brassAccentMat
+            );
+            brassRim.position.y = 0.66;
+            pGroup.add(brassRim);
+
+            const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f2a1d, roughness: 0.8 });
+            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.75, 10), stemMat);
+            stem.position.y = 0.85;
+            pGroup.add(stem);
+
+            const foliageMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.45 });
+            [[0, 1.05, 0, 0.38], [-0.24, 1.22, 0.16, 0.31], [0.24, 1.16, -0.15, 0.32], [0, 1.44, 0, 0.28], [-0.14, 1.38, -0.18, 0.25]].forEach(b => {
+                const leafBall = new THREE.Mesh(new THREE.SphereGeometry(b[3], 16, 16), foliageMat);
+                leafBall.scale.set(1.15, 0.75, 1.15);
+                leafBall.position.set(b[0], b[1], b[2]);
+                leafBall.castShadow = true;
+                pGroup.add(leafBall);
+            });
+            roomGroup.add(pGroup);
+        }
+        createPottedPlant(-5.1, -4.5);
+        createPottedPlant(5.1, 4.3);
+
+        // ============================================================================
+        // 5. EXECUTIVE WALNUT CONFERENCE TABLE, MARBLE INLAY, LAPTOPS & 8 CHAIRS
+        // ============================================================================
+        const tableGroup = new THREE.Group();
+        scene.add(tableGroup);
+
+        // Luxury American Walnut Table Top with Chamfered Dark Edge & Calacatta Marble Center Runner
+        const tableTop = new THREE.Mesh(
+            new THREE.BoxGeometry(7.45, 0.09, 2.52),
+            new THREE.MeshStandardMaterial({ map: walnutTex, roughness: 0.24, metalness: 0.08 })
+        );
+        tableTop.position.set(0, 1.03, 0);
+        tableTop.castShadow = true;
+        tableTop.receiveShadow = true;
+        tableGroup.add(tableTop);
+
+        const tableMarbleRunner = new THREE.Mesh(
+            new THREE.BoxGeometry(5.6, 0.012, 0.56),
+            new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.15, metalness: 0.1 })
+        );
+        tableMarbleRunner.position.set(0, 1.08, 0);
+        tableMarbleRunner.receiveShadow = true;
+        tableGroup.add(tableMarbleRunner);
+
+        const tableBrassTrim = new THREE.Mesh(
+            new THREE.BoxGeometry(5.66, 0.008, 0.60),
+            brassAccentMat
+        );
+        tableBrassTrim.position.set(0, 1.077, 0);
+        tableGroup.add(tableBrassTrim);
+
+        const tableUnderBevel = new THREE.Mesh(
+            new THREE.BoxGeometry(7.15, 0.06, 2.25),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4, metalness: 0.3 })
+        );
+        tableUnderBevel.position.set(0, 0.955, 0);
+        tableGroup.add(tableUnderBevel);
+
+        // Brushed Aluminum Power & HDMI Cable Grommet Boxes in Center of Table
+        const grommetMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.88, roughness: 0.18 });
+        [-1.65, 1.65].forEach(gx => {
+            const grommet = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.018, 0.24), grommetMat);
+            grommet.position.set(gx, 1.088, 0);
+            tableGroup.add(grommet);
+        });
+
+        // Table Pedestal Legs with Chrome Accents
+        const legMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6, roughness: 0.35 });
+        [-2.2, 2.2].forEach(lx => {
+            const col = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 0.94, 20), legMat);
+            col.position.set(lx, 0.47, 0);
+            col.castShadow = true;
+            tableGroup.add(col);
+
+            const footPlate = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.04, 1.35), grommetMat);
+            footPlate.position.set(lx, 0.02, 0);
+            tableGroup.add(footPlate);
+        });
+
+        // Central VoIP Conference Speakerphone (Polycom Spider Style) + Glowing Status LEDs
+        const speakerPhoneGroup = new THREE.Group();
+        speakerPhoneGroup.position.set(0, 1.09, 0);
+        tableGroup.add(speakerPhoneGroup);
+
+        const spBody = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.32, 0.38, 0.06, 6),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.7, roughness: 0.25 })
+        );
+        spBody.position.y = 0.03;
+        speakerPhoneGroup.add(spBody);
+
+        const spScreen = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.16, 0.1),
+            new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+        );
+        spScreen.rotation.x = -Math.PI / 2;
+        spScreen.position.set(0, 0.062, 0.04);
+        speakerPhoneGroup.add(spScreen);
+
+        // Suspended Architectural Linear LED Chandelier with Suspension Wires
+        const chandelierGroup = new THREE.Group();
+        chandelierGroup.position.set(0, 4.15, 0);
+        tableGroup.add(chandelierGroup);
+
+        const chandelierHousing = new THREE.Mesh(
+            new THREE.BoxGeometry(5.1, 0.09, 0.22),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.2 })
+        );
+        chandelierGroup.add(chandelierHousing);
+
+        const chandelierDiffuser = new THREE.Mesh(
+            new THREE.BoxGeometry(4.95, 0.03, 0.16),
+            new THREE.MeshBasicMaterial({ color: 0xfef9c3 })
+        );
+        chandelierDiffuser.position.y = -0.04;
+        chandelierGroup.add(chandelierDiffuser);
+
+        [-2.1, 2.1].forEach(wx => {
+            const wire = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.008, 0.008, 1.35, 8),
+                new THREE.MeshBasicMaterial({ color: 0x94a3b8 })
+            );
+            wire.position.set(wx, 0.68, 0);
+            chandelierGroup.add(wire);
+        });
+
+        // Laptop Screen Presentation Texture
+        function createLaptopScreenTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 160;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, 256, 160);
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(8, 8, 150, 95);
+            ctx.fillRect(166, 8, 82, 144);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(16, 118, 130, 12);
+            ctx.fillStyle = '#34d399';
+            ctx.beginPath();
+            ctx.moveTo(16, 85); ctx.lineTo(50, 55); ctx.lineTo(90, 68); ctx.lineTo(145, 28);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            return new THREE.CanvasTexture(c);
+        }
+        const lapScreenTex = createLaptopScreenTexture();
+
+        // Build the 8 Interactive Ergonomic Executive Chairs + Laptops, Notebooks, Pens, Water Glasses & Coffee Mugs
+        chairConfigs.forEach((cfg, idx) => {
+            const cGroup = new THREE.Group();
+            cGroup.position.copy(cfg.pos);
+            cGroup.rotation.y = cfg.rotY;
+            scene.add(cGroup);
+
+            // Warm Saddle Cognac Tan Executive Leather Upholstery + Brushed Chrome Frame
+            const leatherMat = new THREE.MeshStandardMaterial({ color: 0x7c3f1d, roughness: 0.36, metalness: 0.12 });
+            const chromeMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.92, roughness: 0.14 });
+
+            // Contoured Seat Cushion + Waterfall Front Edge
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.1, 0.66), leatherMat);
+            seat.position.y = 0.56;
+            seat.castShadow = true;
+            cGroup.add(seat);
+
+            // Ergonomic Ribbed Backrest + Stitched Lumbar Cushion + Headrest
+            const back = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.82, 0.09), leatherMat);
+            back.position.set(0, 1.0, -0.29);
+            back.castShadow = true;
+            cGroup.add(back);
+
+            const lumbarPillow = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.22, 0.035), leatherMat);
+            lumbarPillow.position.set(0, 0.82, -0.235);
+            cGroup.add(lumbarPillow);
+
+            const headrest = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.19, 0.1), leatherMat);
+            headrest.position.set(0, 1.48, -0.28);
+            cGroup.add(headrest);
+
+            // Chrome Back Spine Frame
+            const spineFrame = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.78, 0.045), chromeMat);
+            spineFrame.position.set(0, 0.92, -0.35);
+            cGroup.add(spineFrame);
+
+            // Left & Right Curved Armrests
+            [-0.36, 0.36].forEach(ax => {
+                const armSupport = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.26, 10), chromeMat);
+                armSupport.position.set(ax, 0.68, -0.05);
+                cGroup.add(armSupport);
+
+                const armPad = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.035, 0.38), leatherMat);
+                armPad.position.set(ax, 0.81, -0.02);
+                cGroup.add(armPad);
+            });
+
+            // Pneumatic Cylinder & 5-Star Caster Base with Wheels
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.5, 12), chromeMat);
+            pole.position.y = 0.28;
+            cGroup.add(pole);
+
+            for (let leg = 0; leg < 5; leg++) {
+                const angle = (leg / 5) * Math.PI * 2;
+                const legBar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.38), chromeMat);
+                legBar.position.set(Math.sin(angle) * 0.18, 0.06, Math.cos(angle) * 0.18);
+                legBar.rotation.y = angle;
+                cGroup.add(legBar);
+
+                const casterWheel = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10),
+                    new THREE.MeshStandardMaterial({ color: 0x0f172a })
+                );
+                casterWheel.rotation.z = Math.PI / 2;
+                casterWheel.position.set(Math.sin(angle) * 0.35, 0.035, Math.cos(angle) * 0.35);
+                cGroup.add(casterWheel);
+            }
+
+            // Interactive Floor Ring Indicator
+            const ringMat = new THREE.MeshBasicMaterial({
+                color: 0x38bdf8,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.32
+            });
+            const ringMesh = new THREE.Mesh(new THREE.RingGeometry(0.44, 0.54, 24), ringMat);
+            ringMesh.rotation.x = -Math.PI / 2;
+            ringMesh.position.y = 0.025;
+            cGroup.add(ringMesh);
+
+            // Invisible Click Hitbox for Easy Raycasting on Mobile & Desktop
+            const hitBox = new THREE.Mesh(
+                new THREE.BoxGeometry(0.95, 1.55, 0.95),
+                new THREE.MeshBasicMaterial({ visible: false })
+            );
+            hitBox.position.y = 0.78;
+            hitBox.userData = { chairIndex: idx };
+            cGroup.add(hitBox);
+            chairHitMeshes.push(hitBox);
+
+            // Place Settings on Table in front of each Chair (Laptop + Notepad + Pen + Coffee Mug)
+            const placeGroup = new THREE.Group();
+            const tableZ = cfg.pos.z < 0 ? -0.72 : 0.72;
+            placeGroup.position.set(cfg.pos.x, 1.095, tableZ);
+            placeGroup.rotation.y = cfg.rotY;
+            scene.add(placeGroup);
+
+            // Aluminum Laptop Base + Keyboard Deck
+            const lapBase = new THREE.Mesh(
+                new THREE.BoxGeometry(0.44, 0.018, 0.31),
+                new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.85, roughness: 0.2 })
+            );
+            placeGroup.add(lapBase);
+
+            const kbDeck = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.38, 0.16),
+                new THREE.MeshBasicMaterial({ color: 0x1e293b })
+            );
+            kbDeck.rotation.x = -Math.PI / 2;
+            kbDeck.position.set(0, 0.011, 0.02);
+            placeGroup.add(kbDeck);
+
+            const lidPivot = new THREE.Group();
+            lidPivot.position.set(0, 0.01, 0.15);
+            lidPivot.rotation.x = 1.52; // Closed initially
+            placeGroup.add(lidPivot);
+
+            const lapLid = new THREE.Mesh(
+                new THREE.BoxGeometry(0.44, 0.29, 0.014),
+                new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.85, roughness: 0.2 })
+            );
+            lapLid.position.set(0, 0.145, 0);
+            lidPivot.add(lapLid);
+
+            const lapScreen = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.41, 0.26),
+                new THREE.MeshBasicMaterial({ map: lapScreenTex, side: THREE.DoubleSide })
+            );
+            lapScreen.position.set(0, 0.145, -0.009);
+            lidPivot.add(lapScreen);
+
+            // Executive Notepad & Pen next to Laptop
+            const notepad = new THREE.Mesh(
+                new THREE.BoxGeometry(0.22, 0.012, 0.28),
+                new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 })
+            );
+            notepad.position.set(0.34, 0.006, 0.02);
+            notepad.rotation.y = -0.08;
+            placeGroup.add(notepad);
+
+            const pen = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.006, 0.006, 0.18, 8),
+                new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.7, roughness: 0.2 })
+            );
+            pen.rotation.x = Math.PI / 2;
+            pen.rotation.z = 0.15;
+            pen.position.set(0.36, 0.016, 0.02);
+            placeGroup.add(pen);
+
+            // Ceramic Coffee Cup & Saucer + Crystal Water Glass on Table
+            const saucer = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.075, 0.06, 0.012, 16),
+                new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.2 })
+            );
+            saucer.position.set(-0.33, 0.006, -0.04);
+            placeGroup.add(saucer);
+
+            const mug = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.048, 0.04, 0.095, 16),
+                new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.15 })
+            );
+            mug.position.set(-0.33, 0.052, -0.04);
+            placeGroup.add(mug);
+
+            const coffeeLiquid = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.043, 0.043, 0.005, 14),
+                new THREE.MeshBasicMaterial({ color: 0x3b1909 })
+            );
+            coffeeLiquid.position.set(-0.33, 0.098, -0.04);
+            placeGroup.add(coffeeLiquid);
+
+            const waterGlass = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.036, 0.03, 0.11, 14),
+                new THREE.MeshPhysicalMaterial({ color: 0xbae6fd, transparent: true, opacity: 0.55, roughness: 0.05 })
+            );
+            waterGlass.position.set(-0.31, 0.055, 0.11);
+            placeGroup.add(waterGlass);
+
+            cfg.laptopLid = lidPivot;
+            chairVisuals.push({ leatherMat, ringMat });
+        });
+
+        // ============================================================================
+        // 6. WALL-MOUNTED SPLIT AC UNIT (Mounted at x = 2.4, y = 4.35, z = -5.15)
+        // ============================================================================
+        const acUnitGroup = new THREE.Group();
+        acUnitGroup.position.set(2.4, 4.35, -5.15);
+        scene.add(acUnitGroup);
+
+        // Sleek White Inverter AC Chassis
+        const acBody = new THREE.Mesh(
+            new THREE.BoxGeometry(3.15, 0.78, 0.56),
+            new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2, metalness: 0.1 })
+        );
+        acBody.castShadow = true;
+        acUnitGroup.add(acBody);
+
+        // Dark Vent Mouth Slot on Bottom Front
+        const acMouthSlot = new THREE.Mesh(
+            new THREE.BoxGeometry(2.96, 0.14, 0.24),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 })
+        );
+        acMouthSlot.position.set(0, -0.26, 0.19);
+        acUnitGroup.add(acMouthSlot);
+
+        // Animated Louver Flap Pivot
+        const acFlapPivot = new THREE.Group();
+        acFlapPivot.position.set(0, -0.24, 0.24);
+        acUnitGroup.add(acFlapPivot);
+
+        const acFlapBlade = new THREE.Mesh(
+            new THREE.BoxGeometry(2.94, 0.04, 0.18),
+            new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.3 })
+        );
+        acFlapPivot.add(acFlapBlade);
+
+        // Front Digital LED Temperature Display on AC Chassis
+        const acLedCanvas = document.createElement('canvas');
+        acLedCanvas.width = 160;
+        acLedCanvas.height = 64;
+        const acLedCtx = acLedCanvas.getContext('2d');
+        const acLedTex = new THREE.CanvasTexture(acLedCanvas);
+
+        const acLedMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.55, 0.22),
+            new THREE.MeshBasicMaterial({ map: acLedTex })
+        );
+        acLedMesh.position.set(0.95, 0.06, 0.285);
+        acUnitGroup.add(acLedMesh);
+
+        function updateAcChassisDisplay() {
+            if (!acLedCtx) return;
+            acLedCtx.fillStyle = '#090d16';
+            acLedCtx.fillRect(0, 0, 160, 64);
+            acLedCtx.fillStyle = '#38bdf8';
+            acLedCtx.font = 'bold 34px JetBrains Mono, monospace';
+            acLedCtx.fillText(`${simState.acCompressorTemp}°C`, 16, 44);
+            acLedTex.needsUpdate = true;
+        }
+        updateAcChassisDisplay();
+
+        // ============================================================================
+        // 7. AERODYNAMIC WIND STREAMLINE RIBBONS EMERGING DIRECTLY FROM AC MOUTH
+        // ============================================================================
+        // Creates a high-visibility flowing wind stream texture that moves from t=0 (AC nozzle) to t=1 (Table)
+        function createAerodynamicWindTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+
+            ctx.clearRect(0, 0, 512, 64);
+
+            // Primary sleek aerodynamic air wave pulse
+            const grad1 = ctx.createLinearGradient(0, 0, 512, 0);
+            grad1.addColorStop(0.0, 'rgba(56, 189, 248, 0.0)');
+            grad1.addColorStop(0.12, 'rgba(56, 189, 248, 0.55)');
+            grad1.addColorStop(0.45, 'rgba(186, 230, 253, 0.95)');
+            grad1.addColorStop(0.75, 'rgba(255, 255, 255, 1.0)');
+            grad1.addColorStop(0.92, 'rgba(56, 189, 248, 0.4)');
+            grad1.addColorStop(1.0, 'rgba(56, 189, 248, 0.0)');
+
+            ctx.fillStyle = grad1;
+            ctx.beginPath();
+            ctx.roundRect(16, 10, 380, 44, 22);
+            ctx.fill();
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            tex.repeat.set(1.8, 1);
+            return tex;
+        }
+
+        const airflowGroup = new THREE.Group();
+        scene.add(airflowGroup);
+
+        // 1) Glowing Cold-Air Plenum Strip directly inside the AC bottom louver mouth (Y=4.08, Z=-4.96)
+        // Makes it 100% visually clear that cold air originates right inside the AC nozzle!
+        const nozzleGlowMat = new THREE.MeshBasicMaterial({
+            color: 0x38bdf8,
+            transparent: true,
+            opacity: 0.85,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const nozzleGlowMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(3.05, 0.09, 0.18),
+            nozzleGlowMat
+        );
+        nozzleGlowMesh.position.copy(anchors.acFlapOrigin);
+        airflowGroup.add(nozzleGlowMesh);
+
+        // 2) Volumetric Mist Sheet emerging directly from AC Louver downward toward the Conference Table
+        const veilCurvePoints = [
+            new THREE.Vector3(anchors.acFlapOrigin.x, anchors.acFlapOrigin.y, anchors.acFlapOrigin.z),
+            new THREE.Vector3(anchors.acFlapOrigin.x, 3.45, -3.55),
+            new THREE.Vector3(anchors.acFlapOrigin.x, 2.55, -1.75),
+            new THREE.Vector3(anchors.acFlapOrigin.x, 1.75, 0.25)
+        ];
+        const veilCurve = new THREE.CatmullRomCurve3(veilCurvePoints);
+        const veilGeo = new THREE.TubeGeometry(veilCurve, 32, 0.42, 12, false);
+        const veilMat = new THREE.MeshBasicMaterial({
+            color: 0x38bdf8,
+            transparent: true,
+            opacity: 0.05,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        const airVeilMesh = new THREE.Mesh(veilGeo, veilMat);
+        // Stretch width in X around the AC center without distorting Y/Z origin!
+        airVeilMesh.scale.set(3.2, 0.35, 1.0);
+        // Compensate Y position after scaling so origin stays locked at AC nozzle Y=4.08
+        airVeilMesh.position.y = anchors.acFlapOrigin.y * (1 - 0.35);
+        airflowGroup.add(airVeilMesh);
+
+        // 3) 16 Aerodynamic 3D Wind Streamline Ribbons starting EXACTLY at AC Mouth (Y=4.08, Z=-4.96)
+        // IMPORTANT: No geometry.scale() on world coordinates so t=0 stays 100% locked inside the AC vent!
+        const windStreamlines = [];
+        const STREAMLINE_COUNT = 16;
+
+        for (let i = 0; i < STREAMLINE_COUNT; i++) {
+            const laneNorm = (i / (STREAMLINE_COUNT - 1)) * 2 - 1; // -1 to +1 across the 3.0m AC vent width
+            const layerTier = i % 3; // 0 = upper arc, 1 = mid conference table arc, 2 = lower sweep
+            const tex = createAerodynamicWindTexture();
+            tex.offset.x = (i * 0.19) % 1;
+
+            // Exact starting coordinate inside the AC bottom louver slot
+            const startX = anchors.acFlapOrigin.x + laneNorm * 1.42;
+            const startY = anchors.acFlapOrigin.y - (layerTier - 1) * 0.03; // Y = 4.08 (AC Mouth!)
+            const startZ = anchors.acFlapOrigin.z;                          // Z = -4.96 (AC Mouth!)
+
+            // Smooth aerodynamic trajectory from high AC unit down across the meeting table
+            const basePoints = [
+                new THREE.Vector3(startX, startY, startZ),                                                          // t=0.0: Inside AC Vent Mouth (Y=4.08, Z=-4.96)
+                new THREE.Vector3(startX + laneNorm * 0.12, startY - 0.32 - layerTier * 0.08, startZ + 0.95),       // t=0.2: Shooting out of AC louver (Y=3.72, Z=-4.01)
+                new THREE.Vector3(startX + laneNorm * 0.28, startY - 0.88 - layerTier * 0.16, startZ + 2.35),       // t=0.4: Descending toward table (Y=3.15, Z=-2.61)
+                new THREE.Vector3(startX + laneNorm * 0.48, startY - 1.55 - layerTier * 0.22, startZ + 3.95),       // t=0.6: Over north chairs (Y=2.45, Z=-1.01)
+                new THREE.Vector3(startX + laneNorm * 0.68, startY - 2.15 - layerTier * 0.24, startZ + 5.45),       // t=0.8: Across center of meeting table (Y=1.85, Z=+0.49)
+                new THREE.Vector3(startX + laneNorm * 0.88, startY - 2.42 - layerTier * 0.18, startZ + 6.95)        // t=1.0: Gentle curl past south chairs (Y=1.58, Z=+1.99)
+            ];
+
+            const curve = new THREE.CatmullRomCurve3(basePoints);
+            const tubeRadius = layerTier === 1 ? 0.042 : 0.032;
+            const geo = new THREE.TubeGeometry(curve, 52, tubeRadius, 8, false);
+
+            const mat = new THREE.MeshBasicMaterial({
+                map: tex,
+                color: 0x38bdf8,
+                transparent: true,
+                opacity: 0.88,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+
+            const ribbonMesh = new THREE.Mesh(geo, mat);
+            airflowGroup.add(ribbonMesh);
+
+            windStreamlines.push({
+                mesh: ribbonMesh,
+                texture: tex,
+                tier: layerTier,
+                phase: i * 0.45,
+                speedFactor: 0.92 + (i % 4) * 0.14
+            });
+        }
+
+        // ============================================================================
+        // 8. HIGH-REALISM IOT INDUSTRIAL CONTROL PANEL (ESP32 + DHT22 + IR TX + OLED)
+        // ============================================================================
+        const iotPanelGroup = new THREE.Group();
+        iotPanelGroup.position.set(5.85, 2.7, -2.2);
+        iotPanelGroup.rotation.y = -Math.PI / 2;
+        scene.add(iotPanelGroup);
+
+        // Industrial NEMA Powder-Coated Steel Enclosure Box
+        const boxBack = new THREE.Mesh(
+            new THREE.BoxGeometry(1.96, 2.26, 0.1),
+            new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6, roughness: 0.35 })
+        );
+        iotPanelGroup.add(boxBack);
+
+        // Inner Galvanized Steel Mounting Subplate with Corner Bolts
+        const subPlate = new THREE.Mesh(
+            new THREE.BoxGeometry(1.78, 2.08, 0.03),
+            new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.3 })
+        );
+        subPlate.position.z = 0.055;
+        iotPanelGroup.add(subPlate);
+
+        // Slotted PVC Wiring Ducts (Top & Bottom Finger Trunking)
+        const ductMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.45 });
+        [-0.86, 0.86].forEach(dy => {
+            const duct = new THREE.Mesh(new THREE.BoxGeometry(1.64, 0.13, 0.15), ductMat);
+            duct.position.set(0, dy, 0.09);
+            iotPanelGroup.add(duct);
+            for (let s = -7; s <= 7; s++) {
+                const fingerSlot = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.03, 0.14, 0.16),
+                    new THREE.MeshBasicMaterial({ color: 0x0f172a })
+                );
+                fingerSlot.position.set(s * 0.1, dy, 0.09);
+                iotPanelGroup.add(fingerSlot);
+            }
+        });
+
+        // Aluminum 35mm DIN Rail + Green Power Terminal Blocks
+        const dinRail = new THREE.Mesh(
+            new THREE.BoxGeometry(1.66, 0.2, 0.04),
+            new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.9, roughness: 0.18 })
+        );
+        dinRail.position.set(0, 0.02, 0.075);
+        iotPanelGroup.add(dinRail);
+
+        // Enclosure Flanged Side Walls + Rubber Weather Gasket
+        const sideWallMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.5, roughness: 0.35 });
+        [-0.94, 0.94].forEach(sx => {
+            const side = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.26, 0.42), sideWallMat);
+            side.position.set(sx, 0, 0.16);
+            iotPanelGroup.add(side);
+        });
+        [-1.09, 1.09].forEach(sy => {
+            const cap = new THREE.Mesh(new THREE.BoxGeometry(1.96, 0.08, 0.42), sideWallMat);
+            cap.position.set(0, sy, 0.16);
+            iotPanelGroup.add(cap);
+        });
+
+        // Bottom PG9 Cable Glands + External Sensor Conduit
+        [-0.58, 0, 0.58].forEach(gx => {
+            const gland = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.07, 0.08, 0.18, 12),
+                new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 })
+            );
+            gland.position.set(gx, -1.18, 0.16);
+            iotPanelGroup.add(gland);
+        });
+
+        // Hinged Transparent Polycarbonate Door (Swung Open with Handle Latch)
+        const acrylicDoor = new THREE.Mesh(
+            new THREE.BoxGeometry(1.88, 2.18, 0.04),
+            new THREE.MeshPhysicalMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.2, roughness: 0.08 })
+        );
+        acrylicDoor.position.set(1.58, 0, 0.72);
+        acrylicDoor.rotation.y = -0.92;
+        iotPanelGroup.add(acrylicDoor);
+
+        // --- Solderless Breadboard Base + Silkscreened ESP32 DevKit V1 ---
+        function createEsp32PcbSilkscreen() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 420;
+            const ctx = c.getContext('2d');
+            // Matte dark PCB solder mask
+            ctx.fillStyle = '#0b1320';
+            ctx.fillRect(0, 0, 256, 420);
+
+            // Copper trace lines under mask
+            ctx.strokeStyle = 'rgba(20, 83, 45, 0.55)';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < 15; i++) {
+                ctx.beginPath();
+                ctx.moveTo(35, 180 + i * 14);
+                ctx.lineTo(221, 180 + i * 14);
+                ctx.stroke();
+            }
+
+            // Gold PCB Antenna Meander at Top
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(75, 48);
+            ctx.lineTo(75, 16); ctx.lineTo(98, 16); ctx.lineTo(98, 42);
+            ctx.lineTo(122, 42); ctx.lineTo(122, 16); ctx.lineTo(146, 16);
+            ctx.lineTo(146, 42); ctx.lineTo(175, 42); ctx.lineTo(175, 14);
+            ctx.stroke();
+
+            // White Silkscreen Pin Labels on Left & Right Edges
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 11px JetBrains Mono, monospace';
+            const leftPins = ['3V3', 'EN', 'VP', 'VN', 'D34', 'D35', 'D32', 'D33', 'D25', 'D26', 'D27', 'D14', 'D12', 'GND', 'D13'];
+            const rightPins = ['VIN', 'GND', 'D23', 'D22', 'TX0', 'RX0', 'D21', 'GND', 'D19', 'D18', 'D5', 'D17', 'D16', 'D4', 'D2'];
+            leftPins.forEach((lbl, idx) => {
+                const y = 78 + idx * 20;
+                ctx.fillStyle = (lbl === 'D14' || lbl === '3V3' || lbl === 'GND') ? '#38bdf8' : '#e2e8f0';
+                ctx.fillText(lbl, 26, y);
+                ctx.fillStyle = '#eab308';
+                ctx.beginPath(); ctx.arc(14, y - 4, 5, 0, Math.PI * 2); ctx.fill();
+            });
+            rightPins.forEach((lbl, idx) => {
+                const y = 78 + idx * 20;
+                ctx.fillStyle = (lbl === 'D4' || lbl === 'D21' || lbl === 'D22') ? '#facc15' : '#e2e8f0';
+                ctx.fillText(lbl, 202, y);
+                ctx.fillStyle = '#eab308';
+                ctx.beginPath(); ctx.arc(242, y - 4, 5, 0, Math.PI * 2); ctx.fill();
+            });
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = 'bold 13px Inter, sans-serif';
+            ctx.fillText('ESP32-DEVKITC-V1', 68, 392);
+            return new THREE.CanvasTexture(c);
+        }
+
+        function createWroomCanTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#cbd5e1';
+            ctx.fillRect(0, 0, 256, 256);
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 6;
+            ctx.strokeRect(8, 8, 240, 240);
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 22px JetBrains Mono, monospace';
+            ctx.fillText('ESP-WROOM-32', 36, 95);
+            ctx.font = '16px JetBrains Mono, monospace';
+            ctx.fillText('FCC ID: 2AC7Z', 52, 135);
+            ctx.fillText('CE  2.4GHz WiFi', 48, 168);
+            return new THREE.CanvasTexture(c);
+        }
+
+        const espGroup = new THREE.Group();
+        espGroup.position.set(0.3, -0.02, 0.12);
+        iotPanelGroup.add(espGroup);
+
+        // White Solderless Carrier Breadboard under ESP32
+        const breadboard = new THREE.Mesh(
+            new THREE.BoxGeometry(0.98, 1.46, 0.06),
+            new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35 })
+        );
+        breadboard.position.z = -0.02;
+        espGroup.add(breadboard);
+
+        // ESP32 Main PCB with Silkscreen
+        const espPcb = new THREE.Mesh(
+            new THREE.BoxGeometry(0.84, 1.34, 0.045),
+            new THREE.MeshStandardMaterial({ map: createEsp32PcbSilkscreen(), roughness: 0.3, metalness: 0.1 })
+        );
+        espPcb.position.z = 0.03;
+        espGroup.add(espPcb);
+
+        // Metallic RF Shield Can (ESP-WROOM-32)
+        const espShield = new THREE.Mesh(
+            new THREE.BoxGeometry(0.54, 0.56, 0.055),
+            new THREE.MeshStandardMaterial({ map: createWroomCanTexture(), metalness: 0.85, roughness: 0.2 })
+        );
+        espShield.position.set(0, 0.24, 0.075);
+        espGroup.add(espShield);
+
+        // CP2102 USB-UART Bridge IC + AMS1117 3.3V Regulator
+        const cp2102Chip = new THREE.Mesh(
+            new THREE.BoxGeometry(0.16, 0.16, 0.03),
+            new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.2 })
+        );
+        cp2102Chip.position.set(0, -0.28, 0.06);
+        espGroup.add(cp2102Chip);
+
+        const ams1117 = new THREE.Mesh(
+            new THREE.BoxGeometry(0.18, 0.11, 0.035),
+            new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.25 })
+        );
+        ams1117.position.set(-0.18, -0.14, 0.06);
+        espGroup.add(ams1117);
+
+        // Bottom USB Type-C Port + Tactile BOOT & EN Buttons
+        const usbPort = new THREE.Mesh(
+            new THREE.BoxGeometry(0.24, 0.18, 0.065),
+            new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.92, roughness: 0.12 })
+        );
+        usbPort.position.set(0, -0.62, 0.065);
+        espGroup.add(usbPort);
+
+        [-0.24, 0.24].forEach(bx => {
+            const btnBase = new THREE.Mesh(
+                new THREE.BoxGeometry(0.11, 0.08, 0.03),
+                new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.8 })
+            );
+            btnBase.position.set(bx, -0.52, 0.06);
+            espGroup.add(btnBase);
+
+            const btnCap = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.028, 0.028, 0.045, 12),
+                new THREE.MeshStandardMaterial({ color: 0x090d16 })
+            );
+            btnCap.rotation.x = Math.PI / 2;
+            btnCap.position.set(bx, -0.52, 0.075);
+            espGroup.add(btnCap);
+        });
+
+        // Individual Gold Header Pins along Both Sides of ESP32
+        const pinMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.9, roughness: 0.15 });
+        const headerPlasticMat = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.5 });
+        [-0.36, 0.36].forEach(px => {
+            const plasticStrip = new THREE.Mesh(new THREE.BoxGeometry(0.065, 1.08, 0.05), headerPlasticMat);
+            plasticStrip.position.set(px, -0.02, 0.055);
+            espGroup.add(plasticStrip);
+
+            for (let p = -7; p <= 7; p++) {
+                const goldPin = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.09, 8), pinMat);
+                goldPin.rotation.x = Math.PI / 2;
+                goldPin.position.set(px, p * 0.07 - 0.02, 0.075);
+                espGroup.add(goldPin);
+            }
+        });
+
+        // Onboard Power (Red) & GPIO14 TX Activity (Cyan/Magenta) SMD LEDs
+        const espPwrLed = new THREE.Mesh(
+            new THREE.SphereGeometry(0.035, 12, 12),
+            new THREE.MeshBasicMaterial({ color: 0xef4444 })
+        );
+        espPwrLed.position.set(-0.14, -0.4, 0.068);
+        espGroup.add(espPwrLed);
+
+        const espTxLedMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+        const espTxLed = new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 12), espTxLedMat);
+        espTxLed.position.set(0.14, -0.4, 0.068);
+        espGroup.add(espTxLed);
+
+        // --- Live 0.96" I2C OLED Display Module (SSD1306) inside IoT Panel ---
+        const oledCanvas = document.createElement('canvas');
+        oledCanvas.width = 256;
+        oledCanvas.height = 128;
+        const oledCtx = oledCanvas.getContext('2d');
+        const oledTex = new THREE.CanvasTexture(oledCanvas);
+
+        const oledGroup = new THREE.Group();
+        oledGroup.position.set(-0.48, 0.04, 0.14);
+        iotPanelGroup.add(oledGroup);
+
+        const oledPcb = new THREE.Mesh(
+            new THREE.BoxGeometry(0.56, 0.42, 0.035),
+            new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.35 })
+        );
+        oledGroup.add(oledPcb);
+
+        const oledScreen = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.5, 0.28),
+            new THREE.MeshBasicMaterial({ map: oledTex })
+        );
+        oledScreen.position.set(0, -0.02, 0.022);
+        oledGroup.add(oledScreen);
+
+        function updatePanelOledCanvas() {
+            if (!oledCtx) return;
+            oledCtx.fillStyle = '#020617';
+            oledCtx.fillRect(0, 0, 256, 128);
+            // Yellow Top Header Bar (Classic dual-color SSD1306 OLED look!)
+            oledCtx.fillStyle = '#facc15';
+            oledCtx.font = 'bold 18px JetBrains Mono, monospace';
+            oledCtx.fillText(`SETPOINT: ${simState.roomSetpoint.toFixed(1)}C`, 10, 22);
+            oledCtx.strokeStyle = '#334155';
+            oledCtx.beginPath(); oledCtx.moveTo(0, 30); oledCtx.lineTo(256, 30); oledCtx.stroke();
+
+            // Cyan Main Telemetry Area
+            oledCtx.fillStyle = '#38bdf8';
+            oledCtx.font = 'bold 26px JetBrains Mono, monospace';
+            oledCtx.fillText(`DHT:${simState.currentTemp.toFixed(2)}C`, 10, 66);
+            oledCtx.font = 'bold 17px JetBrains Mono, monospace';
+            oledCtx.fillText(`RH:${Math.round(simState.currentHumidity)}%`, 178, 66);
+
+            oledCtx.fillStyle = '#34d399';
+            oledCtx.font = 'bold 19px JetBrains Mono, monospace';
+            oledCtx.fillText(`FAN:${simState.acFanSpeed} (${Math.round(simState.currentRpm)}RPM)`, 10, 108);
+            oledTex.needsUpdate = true;
+        }
+        updatePanelOledCanvas();
+
+        // --- KY-005 Infrared Transmitter Module (940nm IR LED + SMD Driver) ---
+        const irModGroup = new THREE.Group();
+        irModGroup.position.set(-0.48, 0.56, 0.15);
+        iotPanelGroup.add(irModGroup);
+
+        const irPcb = new THREE.Mesh(
+            new THREE.BoxGeometry(0.46, 0.36, 0.04),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35 })
+        );
+        irModGroup.add(irPcb);
+
+        // SMD Transistor & Current-Limiting Resistor on KY-005
+        const smdResistor = new THREE.Mesh(
+            new THREE.BoxGeometry(0.09, 0.05, 0.025),
+            new THREE.MeshStandardMaterial({ color: 0x1e293b })
+        );
+        smdResistor.position.set(0.08, -0.05, 0.03);
+        irModGroup.add(smdResistor);
+
+        // Bent Steel Anode/Cathode Leads holding the 5mm 940nm IR LED Dome aimed toward AC
+        const leadMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.15 });
+        [-0.03, 0.03].forEach(ly => {
+            const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.12, 8), leadMat);
+            lead.rotation.z = Math.PI / 2;
+            lead.position.set(-0.1, 0.08 + ly, 0.06);
+            irModGroup.add(lead);
+        });
+
+        const irDomeMat = new THREE.MeshBasicMaterial({ color: 0xd946ef });
+        const irDome = new THREE.Mesh(new THREE.SphereGeometry(0.085, 18, 18), irDomeMat);
+        irDome.position.set(-0.16, 0.08, 0.075);
+        irModGroup.add(irDome);
+
+        // --- Authentic White AM2302 / DHT22 Sensor Housing with Perforated Face & Mounting Tab ---
+        function createDht22FrontTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 360;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, 256, 360);
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 6;
+            ctx.strokeRect(6, 6, 244, 348);
+
+            // Dark ventilation grille slots
+            ctx.fillStyle = '#1e293b';
+            for (let row = 0; row < 6; row++) {
+                const y = 38 + row * 34;
+                ctx.fillRect(28, y, 82, 14);
+                ctx.fillRect(146, y, 82, 14);
+            }
+
+            // Blue internal humidity polymer element visible behind slots
+            ctx.fillStyle = '#0284c7';
+            ctx.fillRect(68, 258, 120, 24);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 18px JetBrains Mono, monospace';
+            ctx.fillText('AM2302', 92, 276);
+
+            ctx.fillStyle = '#334155';
+            ctx.font = 'bold 22px Inter, sans-serif';
+            ctx.fillText('DHT22 DIGITAL', 46, 322);
+            return new THREE.CanvasTexture(c);
+        }
+
+        const dhtGroup = new THREE.Group();
+        dhtGroup.position.set(-0.55, -0.54, 0.14);
+        iotPanelGroup.add(dhtGroup);
+
+        const dhtBody = new THREE.Mesh(
+            new THREE.BoxGeometry(0.46, 0.62, 0.2),
+            new THREE.MeshStandardMaterial({ map: createDht22FrontTexture(), roughness: 0.25 })
+        );
+        dhtGroup.add(dhtBody);
+
+        // Top Plastic Mounting Tab with Screw Boss
+        const dhtTab = new THREE.Mesh(
+            new THREE.BoxGeometry(0.28, 0.16, 0.05),
+            new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.3 })
+        );
+        dhtTab.position.set(0, 0.37, -0.06);
+        dhtGroup.add(dhtTab);
+
+        const dhtScrew = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.04, 0.04, 0.07, 12),
+            new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8 })
+        );
+        dhtScrew.rotation.x = Math.PI / 2;
+        dhtScrew.position.set(0, 0.37, -0.04);
+        dhtGroup.add(dhtScrew);
+
+        // 4 Metallic Sensor Pins + 4.7k Pull-up Resistor at Bottom of DHT22
+        [-0.12, -0.04, 0.04, 0.12].forEach(px => {
+            const sPin = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.14, 8), leadMat);
+            sPin.position.set(px, -0.36, 0.02);
+            dhtGroup.add(sPin);
+        });
+
+        // Color-Coded Silicone Jumper Wires with Black Dupont Connector Housings
+        function createDupontJumperWire(points, hexColor) {
+            const curve = new THREE.CatmullRomCurve3(points);
+            const tubeGeo = new THREE.TubeGeometry(curve, 28, 0.02, 8, false);
+            const tubeMat = new THREE.MeshStandardMaterial({ color: hexColor, roughness: 0.35 });
+            iotPanelGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+
+            // Black Dupont Female Connector Housings at both ends
+            [points[0], points[points.length - 1]].forEach(endPt => {
+                const dupont = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.055, 0.055, 0.085),
+                    headerPlasticMat
+                );
+                dupont.position.copy(endPt);
+                iotPanelGroup.add(dupont);
+            });
+        }
+
+        // 1) Red 3.3V VCC (ESP32 3V3 -> DHT22 Pin 1 & OLED VCC)
+        createDupontJumperWire([
+            new THREE.Vector3(-0.06, 0.42, 0.19),
+            new THREE.Vector3(-0.22, 0.25, 0.28),
+            new THREE.Vector3(-0.67, -0.92, 0.18)
+        ], 0xef4444);
+
+        // 2) Black GND (ESP32 GND -> DHT22 Pin 4)
+        createDupontJumperWire([
+            new THREE.Vector3(-0.06, -0.45, 0.19),
+            new THREE.Vector3(-0.28, -0.68, 0.26),
+            new THREE.Vector3(-0.43, -0.92, 0.18)
+        ], 0x111827);
+
+        // 3) Yellow Data Bus (ESP32 GPIO 4 -> DHT22 Pin 2)
+        createDupontJumperWire([
+            new THREE.Vector3(0.66, -0.42, 0.19),
+            new THREE.Vector3(0.25, -0.78, 0.31),
+            new THREE.Vector3(-0.59, -0.92, 0.18)
+        ], 0xfacc15);
+
+        // 4) Magenta PWM IR Carrier (ESP32 GPIO 14 -> KY-005 IR Transmitter)
+        createDupontJumperWire([
+            new THREE.Vector3(-0.06, -0.25, 0.19),
+            new THREE.Vector3(-0.22, 0.22, 0.31),
+            new THREE.Vector3(-0.48, 0.46, 0.19)
+        ], 0xd946ef);
+
+        // 5) Cyan I2C SCL/SDA Bus (ESP32 GPIO 21/22 -> Live OLED Screen)
+        createDupontJumperWire([
+            new THREE.Vector3(0.66, 0.18, 0.19),
+            new THREE.Vector3(0.15, 0.28, 0.29),
+            new THREE.Vector3(-0.48, 0.21, 0.18)
+        ], 0x38bdf8);
+
+        // ============================================================================
+        // 9. INFRARED (IR) SIGNAL WAVE RINGS (ESP32 PANEL -> AC RECEIVER)
+        // ============================================================================
+        const irSignalGroup = new THREE.Group();
+        scene.add(irSignalGroup);
+
+        const irLineCurve = new THREE.LineCurve3(anchors.irLedTip, anchors.acIrReceiver);
+        const irBeamMat = new THREE.MeshBasicMaterial({
+            color: 0xe879f9,
+            transparent: true,
+            opacity: 0,
+            blending: THREE.AdditiveBlending
+        });
+        const irBeamMesh = new THREE.Mesh(new THREE.TubeGeometry(irLineCurve, 16, 0.03, 8, false), irBeamMat);
+        irSignalGroup.add(irBeamMesh);
+
+        // Expanding Sonic-Style IR Wave Rings traveling from IR LED to AC
+        const irWaveRings = [];
+        for (let i = 0; i < 5; i++) {
+            const ringMesh = new THREE.Mesh(
+                new THREE.RingGeometry(0.06, 0.11, 24),
+                new THREE.MeshBasicMaterial({
+                    color: 0xf0abfc,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0,
+                    blending: THREE.AdditiveBlending
+                })
+            );
+            ringMesh.lookAt(anchors.acIrReceiver);
+            irSignalGroup.add(ringMesh);
+            irWaveRings.push({ mesh: ringMesh, offset: i * 0.2 });
+        }
+
+        function fireInfraredSignal(reasonLabel) {
+            simState.irBeamTimer = 1.4;
+            soundEngine.playIrAndAcBeep();
+            const badge = document.getElementById('ir-tx-badge');
+            badge.textContent = 'IR TX: SENDING 940nm';
+            badge.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono-code bg-fuchsia-500/30 text-fuchsia-200 border border-fuchsia-400 ir-active-glow';
+
+            const hexCode = '0x88' + simState.acCompressorTemp.toString(16).toUpperCase() +
+                (simState.acFanSpeed === 'TURBO' ? 'FF' : simState.acFanSpeed === 'HIGH' ? 'F3' : simState.acFanSpeed === 'MED' ? 'B2' : '41');
+
+            appendSerialLog(`[IR_TX] GPIO14 -> ${hexCode} (${reasonLabel} | Kompresor AC: ${simState.acCompressorTemp}°C, Kipas: ${simState.acFanSpeed})`);
+            updateAcChassisDisplay();
+            updatePresentationTvCanvas();
+        }
+
+        // ============================================================================
+        // 10. 3D BUSINESS AVATARS & WALKING ENTRANCE/EXIT ANIMATION
+        // ============================================================================
+        const suitColors = [0x2563eb, 0x059669, 0x7c3aed, 0xd97706, 0xdb2777, 0x0891b2, 0x4f46e5, 0x0d9488];
+
+        function createBusinessAvatar(seatIndex) {
+            const avatar = new THREE.Group();
+            const suitColor = suitColors[seatIndex % suitColors.length];
+
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xfdba74, roughness: 0.45 });
+            const suitMat = new THREE.MeshStandardMaterial({ color: suitColor, roughness: 0.5 });
+            const shirtMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 });
+            const trouserMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7 });
+
+            // Suit Jacket Torso + White Collar Shirt
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.26), suitMat);
+            torso.position.y = 1.05;
+            torso.castShadow = true;
+            avatar.add(torso);
+
+            const shirtFront = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.32, 0.27), shirtMat);
+            shirtFront.position.set(0, 1.14, 0);
+            avatar.add(shirtFront);
+
+            // Head & Styled Hair
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), skinMat);
+            head.position.y = 1.56;
+            head.castShadow = true;
+            avatar.add(head);
+
+            const hair = new THREE.Mesh(
+                new THREE.SphereGeometry(0.212, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+                new THREE.MeshStandardMaterial({ color: 0x1e293b })
+            );
+            hair.position.y = 1.58;
+            avatar.add(hair);
+
+            // Arms
+            const leftArm = new THREE.Group();
+            leftArm.position.set(-0.29, 1.3, 0);
+            const lArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), suitMat);
+            lArmMesh.position.y = -0.22;
+            leftArm.add(lArmMesh);
+            avatar.add(leftArm);
+
+            const rightArm = new THREE.Group();
+            rightArm.position.set(0.29, 1.3, 0);
+            const rArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), suitMat);
+            rArmMesh.position.y = -0.22;
+            rightArm.add(rArmMesh);
+            avatar.add(rightArm);
+
+            // Legs
+            const leftLeg = new THREE.Group();
+            leftLeg.position.set(-0.12, 0.74, 0);
+            const lLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.68, 0.16), trouserMat);
+            lLegMesh.position.y = -0.34;
+            leftLeg.add(lLegMesh);
+            avatar.add(leftLeg);
+
+            const rightLeg = new THREE.Group();
+            rightLeg.position.set(0.12, 0.74, 0);
+            const rLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.68, 0.16), trouserMat);
+            rLegMesh.position.y = -0.34;
+            rightLeg.add(rLegMesh);
+            avatar.add(rightLeg);
+
+            // Subtle Thermal Body Heat Ring (+0.85°C indicator)
+            const heatAura = new THREE.Mesh(
+                new THREE.RingGeometry(0.34, 0.46, 24),
+                new THREE.MeshBasicMaterial({
+                    color: 0xf97316,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.45
+                })
+            );
+            heatAura.rotation.x = -Math.PI / 2;
+            heatAura.position.y = 0.05;
+            avatar.add(heatAura);
+
+            avatar.userData = {
+                leftArm, rightArm, leftLeg, rightLeg, heatAura,
+                walkCycle: Math.random() * Math.PI * 2
+            };
+
+            scene.add(avatar);
+            return avatar;
+        }
+
+        function setAvatarSeatedPose(avatar, seatCfg) {
+            avatar.position.set(seatCfg.pos.x, -0.16, seatCfg.pos.z);
+            avatar.rotation.y = seatCfg.rotY;
+            const u = avatar.userData;
+            u.leftLeg.rotation.x = -Math.PI / 2.2;
+            u.rightLeg.rotation.x = -Math.PI / 2.2;
+            u.leftArm.rotation.x = -0.58;
+            u.rightArm.rotation.x = -0.58;
+            u.heatAura.position.y = 0.22;
+        }
+
+        function getWalkWaypointsForSeat(chairIndex) {
+            const cfg = chairConfigs[chairIndex];
+            const isNorth = cfg.pos.z < 0;
+            const aisleZ = isNorth ? -2.95 : 2.95;
+            return [
+                new THREE.Vector3(-7.6, 0, 2.85),  // Outside sliding glass door
+                new THREE.Vector3(-4.8, 0, 2.85),  // Step inside meeting room
+                new THREE.Vector3(-4.6, 0, aisleZ), // Align with North or South aisle
+                new THREE.Vector3(cfg.pos.x, 0, aisleZ), // Walk to seat column
+                new THREE.Vector3(cfg.pos.x, 0, cfg.pos.z) // Step into chair
+            ];
+        }
+
+        function callPersonToChair(chairIndex) {
+            soundEngine.ensureAutoStartOnInteraction();
+            const cfg = chairConfigs[chairIndex];
+            if (cfg.occupied || cfg.state === 'walking_in') return;
+
+            cfg.occupied = true;
+            cfg.state = 'walking_in';
+            chairVisuals[chairIndex].ringMat.color.setHex(0xf59e0b);
+            chairVisuals[chairIndex].ringMat.opacity = 0.75;
+
+            const av = createBusinessAvatar(chairIndex);
+            const waypoints = getWalkWaypointsForSeat(chairIndex);
+            av.position.copy(waypoints[0]);
+            cfg.avatar = av;
+
+            activeAvatars.push({
+                mesh: av,
+                chairIndex: chairIndex,
+                mode: 'walking_in',
+                waypoints: waypoints,
+                wpIndex: 1
+            });
+
+            appendSerialLog(`[DOOR] Peserta rapat masuk menuju Kursi #${cfg.id} (Beban Kalor +0.85°C)`);
+            refreshChairPopupIfOpen();
+            updatePeopleUI();
+            evaluateClosedLoopSetpoint(false);
+        }
+
+        function sendPersonOutFromChair(chairIndex) {
+            soundEngine.ensureAutoStartOnInteraction();
+            const cfg = chairConfigs[chairIndex];
+            if (!cfg.occupied) return;
+
+            cfg.occupied = false;
+            cfg.state = 'empty';
+            chairVisuals[chairIndex].ringMat.color.setHex(0x38bdf8);
+            chairVisuals[chairIndex].ringMat.opacity = 0.28;
+
+            const record = activeAvatars.find(a => a.chairIndex === chairIndex);
+            if (record) {
+                const exitWaypoints = getWalkWaypointsForSeat(chairIndex).slice().reverse();
+                record.mesh.position.y = 0;
+                record.mode = 'walking_out';
+                record.waypoints = exitWaypoints;
+                record.wpIndex = 1;
+                record.chairIndex = -1;
+            }
+
+            cfg.avatar = null;
+            appendSerialLog(`[DOOR] Peserta di Kursi #${cfg.id} keluar ruangan (Beban Kalor berkurang)`);
+            refreshChairPopupIfOpen();
+            updatePeopleUI();
+            evaluateClosedLoopSetpoint(false);
+        }
+
+        function spawnNextPerson() {
+            const emptyIdx = chairConfigs.findIndex(c => !c.occupied);
+            if (emptyIdx !== -1) {
+                callPersonToChair(emptyIdx);
+            } else {
+                appendSerialLog(`[INFO] Seluruh 8 kursi ruang rapat sudah terisi penuh!`);
+            }
+        }
+
+        function removeLastPerson() {
+            for (let i = chairConfigs.length - 1; i >= 0; i--) {
+                if (chairConfigs[i].occupied) {
+                    sendPersonOutFromChair(i);
+                    return;
+                }
+            }
+            appendSerialLog(`[INFO] Ruang rapat sudah kosong (0 orang = Suhu kembali ke Setpoint).`);
+        }
+
+        function fillAllSeats() {
+            chairConfigs.forEach((c, idx) => {
+                if (!c.occupied) {
+                    setTimeout(() => callPersonToChair(idx), idx * 170);
+                }
+            });
+        }
+
+        function clearAllSeats() {
+            chairConfigs.forEach((c, idx) => {
+                if (c.occupied) {
+                    setTimeout(() => sendPersonOutFromChair(idx), idx * 130);
+                }
+            });
+        }
+
+        // ============================================================================
+        // 11. RAYCASTER CLICK & FLOATING POP-UP FOR CHAIRS
+        // ============================================================================
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        let hoveredChairIdx = null;
+        let pointerDownPos = { x: 0, y: 0 };
+
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+            pointerDownPos = { x: e.clientX, y: e.clientY };
+        });
+
+        renderer.domElement.addEventListener('pointermove', (e) => {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(pointer, camera);
+            const hits = raycaster.intersectObjects(chairHitMeshes);
+
+            if (hits.length > 0) {
+                const idx = hits[0].object.userData.chairIndex;
+                renderer.domElement.style.cursor = 'pointer';
+                if (hoveredChairIdx !== idx) {
+                    if (hoveredChairIdx !== null) {
+                        chairVisuals[hoveredChairIdx].leatherMat.emissive.setHex(0x000000);
+                    }
+                    hoveredChairIdx = idx;
+                    chairVisuals[idx].leatherMat.emissive.setHex(0x1e3a8a);
+                }
+            } else {
+                renderer.domElement.style.cursor = 'grab';
+                if (hoveredChairIdx !== null) {
+                    chairVisuals[hoveredChairIdx].leatherMat.emissive.setHex(0x000000);
+                    hoveredChairIdx = null;
+                }
+            }
+        });
+
+        renderer.domElement.addEventListener('pointerup', (e) => {
+            const moveDist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+            if (moveDist > 6) return;
+
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(pointer, camera);
+            const hits = raycaster.intersectObjects(chairHitMeshes);
+
+            if (hits.length > 0) {
+                openChairPopup(hits[0].object.userData.chairIndex);
+            } else {
+                closeChairPopup();
+            }
+        });
+
+        const chairPopupEl = document.getElementById('chair-popup');
+        document.getElementById('popup-close-btn').addEventListener('click', closeChairPopup);
+
+        function openChairPopup(chairIndex) {
+            simState.selectedChairIndex = chairIndex;
+            chairPopupEl.classList.remove('hidden');
+            refreshChairPopupIfOpen();
+        }
+
+        function closeChairPopup() {
+            simState.selectedChairIndex = null;
+            chairPopupEl.classList.add('hidden');
+        }
+
+        function refreshChairPopupIfOpen() {
+            if (simState.selectedChairIndex === null) return;
+            const idx = simState.selectedChairIndex;
+            const cfg = chairConfigs[idx];
+
+            document.getElementById('popup-chair-title').textContent = `Kursi Eksekutif #${cfg.id}`;
+            const statusEl = document.getElementById('popup-chair-status');
+            const heatEl = document.getElementById('popup-chair-heat');
+            const respEl = document.getElementById('popup-chair-ac-resp');
+            const dotEl = document.getElementById('popup-chair-dot');
+            const actionContainer = document.getElementById('popup-action-container');
+
+            if (cfg.occupied) {
+                statusEl.textContent = cfg.state === 'walking_in' ? 'Berjalan Masuk...' : 'Terisi (Peserta Rapat)';
+                statusEl.className = 'font-semibold text-amber-400';
+                heatEl.textContent = '+0.85°C / +2.2% RH';
+                respEl.textContent = 'AC Boost Aktif';
+                dotEl.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+                actionContainer.innerHTML = `
+                    <button onclick="sendPersonOutFromChair(${idx})" class="w-full py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg transition">
+                        <span>➖ Suruh Orang Keluar</span>
+                    </button>
+                `;
+            } else {
+                statusEl.textContent = 'Kosong (Tersedia)';
+                statusEl.className = 'font-semibold text-emerald-400';
+                heatEl.textContent = '+0.00°C / +0% RH';
+                respEl.textContent = `Setpoint ${simState.roomSetpoint.toFixed(1)}°C`;
+                dotEl.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                actionContainer.innerHTML = `
+                    <button onclick="callPersonToChair(${idx})" class="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg transition">
+                        <span>➕ Panggil Orang Masuk</span>
+                    </button>
+                `;
+            }
+        }
+
+        // ============================================================================
+        // 12. TRUE CLOSED-LOOP SETPOINT CONTROLLER (ESP32 + DHT22 + IR TX)
+        // ============================================================================
+        function appendSerialLog(message) {
+            const logBox = document.getElementById('serial-log');
+            const line = document.createElement('div');
+            const timeStr = new Date().toTimeString().split(' ')[0];
+            line.textContent = `[${timeStr}] ${message}`;
+
+            if (message.includes('[IR_TX]')) {
+                line.className = 'text-fuchsia-300 font-semibold';
+            } else if (message.includes('[SETPOINT]')) {
+                line.className = 'text-cyan-300 font-semibold';
+            } else if (message.includes('[DOOR]')) {
+                line.className = 'text-amber-300';
+            } else {
+                line.className = 'text-emerald-400';
+            }
+
+            logBox.appendChild(line);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function adjustRoomSetpoint(delta) {
+            const nextVal = Math.min(26.0, Math.max(18.0, simState.roomSetpoint + delta));
+            applyRoomSetpoint(nextVal);
+        }
+
+        function setRoomSetpointFromSlider(val) {
+            applyRoomSetpoint(parseFloat(val));
+        }
+
+        function applyRoomSetpoint(val) {
+            soundEngine.ensureAutoStartOnInteraction();
+            soundEngine.playUiClick(720);
+            simState.roomSetpoint = val;
+            document.getElementById('setpoint-val-ui').textContent = val.toFixed(1);
+            document.getElementById('desc-setpoint').textContent = val.toFixed(1);
+            document.getElementById('setpoint-slider').value = val;
+
+            appendSerialLog(`[SETPOINT] Target Setpoint Ruangan diubah ke ${val.toFixed(1)}°C`);
+            evaluateClosedLoopSetpoint(true);
+            refreshChairPopupIfOpen();
+        }
+
+        function updatePeopleUI() {
+            const occupiedCount = chairConfigs.filter(c => c.occupied).length;
+            const totalHeat = occupiedCount * 0.85;
+            document.getElementById('people-count-ui').textContent = occupiedCount;
+            document.getElementById('people-heat-ui').textContent = `+${totalHeat.toFixed(1)}°C`;
+
+            const grid = document.getElementById('seat-mini-grid');
+            grid.innerHTML = chairConfigs.map((c, idx) => `
+                <button onclick="openChairPopup(${idx})"
+                    class="py-1.5 px-2 rounded-lg border text-[11px] font-semibold flex items-center justify-between transition ${
+                        c.occupied
+                            ? 'bg-amber-500/20 border-amber-500/60 text-amber-300'
+                            : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }">
+                    <span>#${c.id}</span>
+                    <span class="w-2 h-2 rounded-full ${c.occupied ? 'bg-amber-400' : 'bg-slate-600'}"></span>
+                </button>
+            `).join('');
+        }
+        updatePeopleUI();
+
+        function setControlMode(mode) {
+            simState.mode = mode;
+            const autoBtn = document.getElementById('mode-auto-btn');
+            const manBtn = document.getElementById('mode-manual-btn');
+
+            if (mode === 'AUTO') {
+                autoBtn.className = 'py-1.5 rounded-lg text-xs font-semibold bg-cyan-500 text-slate-950 shadow transition';
+                manBtn.className = 'py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+                appendSerialLog(`[MODE] Kontrol Otomatis Setpoint DHT22 Aktif`);
+                evaluateClosedLoopSetpoint(true);
+            } else {
+                manBtn.className = 'py-1.5 rounded-lg text-xs font-semibold bg-fuchsia-500 text-white shadow transition';
+                autoBtn.className = 'py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+                appendSerialLog(`[MODE] Manual Override Kipas Aktif`);
+            }
+        }
+
+        function manualSetFan(speed) {
+            if (simState.mode === 'AUTO') {
+                setControlMode('MANUAL');
+            }
+            simState.acFanSpeed = speed;
+            syncAcControlsUI();
+            fireInfraredSignal('MANUAL FAN OVERRIDE');
+        }
+
+        // Closed-Loop Setpoint Logic:
+        // 0 people -> Fan LOW, AC Compressor = Setpoint (Room stabilizes at Setpoint)
+        // As people enter -> ESP32 immediately steps up Fan Speed (MED -> HIGH -> TURBO)
+        // and lowers AC internal compressor target to hold steady-state error within ≤ 0.20°C!
+        function evaluateClosedLoopSetpoint(forceFire = false) {
+            if (simState.mode !== 'AUTO') return;
+
+            const peopleCount = chairConfigs.filter(c => c.occupied).length;
+            const tempError = simState.currentTemp - simState.roomSetpoint;
+
+            let desiredFan = 'LOW';
+            let compOffset = 0;
+
+            if (peopleCount === 0 && tempError <= 0.04) {
+                desiredFan = 'LOW';
+                compOffset = 0;
+            } else if (peopleCount <= 2) {
+                desiredFan = 'MED';
+                compOffset = -1;
+            } else if (peopleCount <= 5) {
+                desiredFan = 'HIGH';
+                compOffset = -3;
+            } else {
+                desiredFan = 'TURBO';
+                compOffset = -5;
+            }
+
+            const desiredCompressorTemp = Math.max(16, Math.min(26, Math.round(simState.roomSetpoint + compOffset)));
+            const commandKey = `${desiredFan}_${desiredCompressorTemp}`;
+
+            if (forceFire || commandKey !== simState.lastAutoCommandKey) {
+                simState.lastAutoCommandKey = commandKey;
+                simState.acFanSpeed = desiredFan;
+                simState.acCompressorTemp = desiredCompressorTemp;
+                syncAcControlsUI();
+                fireInfraredSignal(`SETPOINT ${simState.roomSetpoint.toFixed(1)}°C | ${peopleCount} ORANG`);
+            }
+        }
+
+        function syncAcControlsUI() {
+            const rpmPresets = { 'LOW': 650, 'MED': 950, 'HIGH': 1280, 'TURBO': 1600 };
+            simState.targetRpm = rpmPresets[simState.acFanSpeed] || 650;
+
+            document.getElementById('ac-internal-temp-ui').textContent = simState.acCompressorTemp;
+            document.getElementById('label-ac-temp').textContent = simState.acCompressorTemp + '°C';
+            document.getElementById('label-ac-fan').textContent = `${simState.acFanSpeed} • ${simState.targetRpm} RPM`;
+
+            const badgeLabels = {
+                'LOW': 'LOW (650 RPM • 25%)',
+                'MED': 'MED (950 RPM • 55%)',
+                'HIGH': 'HIGH (1280 RPM • 80%)',
+                'TURBO': 'TURBO (1600 RPM • 100%)'
+            };
+            const effortWidths = { 'LOW': '25%', 'MED': '55%', 'HIGH': '80%', 'TURBO': '100%' };
+
+            document.getElementById('ac-fan-badge').textContent = `${simState.acFanSpeed} • ${simState.targetRpm} RPM`;
+            document.getElementById('cooling-power-ui').textContent = `Kipas: ${badgeLabels[simState.acFanSpeed]}`;
+            document.getElementById('cooling-effort-bar').style.width = effortWidths[simState.acFanSpeed];
+
+            ['LOW', 'MED', 'HIGH', 'TURBO'].forEach(spd => {
+                const btn = document.getElementById('fan-btn-' + spd);
+                if (spd === simState.acFanSpeed) {
+                    btn.className = 'py-1.5 rounded-lg text-[10px] font-bold bg-cyan-500/25 text-cyan-300 border border-cyan-400 transition';
+                } else {
+                    btn.className = 'py-1.5 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 transition';
+                }
+            });
+        }
+
+        // ============================================================================
+        // MATLAB / SIMULINK DUAL-SUBPLOT OSCILLOSCOPE RENDERER
+        // ============================================================================
+        function drawMatlabScope() {
+            const canvas = document.getElementById('matlab-scope-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width;
+            const H = canvas.height;
+
+            ctx.fillStyle = '#050811';
+            ctx.fillRect(0, 0, W, H);
+
+            // Layout for 2 Subplots:
+            // Top Subplot: Temperature (17°C to 30°C)
+            // Bottom Subplot: Blower Motor Speed (500 RPM to 1750 RPM)
+            const padL = 34, padR = 8, topY = 8, topH = 74, botY = 96, botH = 68;
+            const plotW = W - padL - padR;
+
+            function drawGrid(y0, h, yLabels, unitColor) {
+                ctx.strokeStyle = 'rgba(51, 65, 85, 0.45)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(padL, y0, plotW, h);
+
+                // Horizontal grid lines + labels
+                ctx.font = '9px JetBrains Mono, monospace';
+                ctx.fillStyle = unitColor;
+                ctx.textAlign = 'right';
+                for (let i = 0; i <= 2; i++) {
+                    const gy = y0 + (i / 2) * h;
+                    ctx.beginPath();
+                    ctx.setLineDash([2, 2]);
+                    ctx.moveTo(padL, gy);
+                    ctx.lineTo(padL + plotW, gy);
+                    ctx.stroke();
+                    ctx.fillText(yLabels[i], padL - 4, gy + 3);
+                }
+
+                // Vertical time grid lines
+                for (let j = 1; j < 6; j++) {
+                    const gx = padL + (j / 6) * plotW;
+                    ctx.beginPath();
+                    ctx.moveTo(gx, y0);
+                    ctx.lineTo(gx, y0 + h);
+                    ctx.stroke();
+                }
+                ctx.setLineDash([]);
+            }
+
+            // 1. Draw Top Subplot Grid (Temperature °C)
+            drawGrid(topY, topH, ['29°', '23°', '17°'], '#fbbf24');
+
+            // 2. Draw Bottom Subplot Grid (Blower RPM)
+            drawGrid(botY, botH, ['1650', '1100', '550'], '#34d399');
+
+            const mapTempY = (t) => {
+                const clamped = Math.max(17, Math.min(29, t));
+                return topY + topH - ((clamped - 17) / (29 - 17)) * topH;
+            };
+
+            const mapRpmY = (rpm) => {
+                const clamped = Math.max(550, Math.min(1650, rpm));
+                return botY + botH - ((clamped - 550) / (1650 - 550)) * botH;
+            };
+
+            // Plot Uncompensated Temp (faint red dotted line)
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(244, 63, 94, 0.45)';
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([2, 3]);
+            matlabHistory.uncompTemp.forEach((val, i) => {
+                const x = padL + (i / (MAX_SCOPE_SAMPLES - 1)) * plotW;
+                const y = mapTempY(val);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Plot Target Setpoint (cyan dashed line)
+            ctx.beginPath();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 3]);
+            matlabHistory.setpoint.forEach((val, i) => {
+                const x = padL + (i / (MAX_SCOPE_SAMPLES - 1)) * plotW;
+                const y = mapTempY(val);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Plot Actual DHT22 Temperature (solid yellow/amber MATLAB curve)
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 2.0;
+            matlabHistory.actualTemp.forEach((val, i) => {
+                const x = padL + (i / (MAX_SCOPE_SAMPLES - 1)) * plotW;
+                const y = mapTempY(val);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Plot Blower RPM Curve on Bottom Subplot (solid emerald green curve with fill)
+            ctx.beginPath();
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 2.0;
+            matlabHistory.rpm.forEach((val, i) => {
+                const x = padL + (i / (MAX_SCOPE_SAMPLES - 1)) * plotW;
+                const y = mapRpmY(val);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Subtle area fill under RPM curve
+            ctx.lineTo(padL + plotW, botY + botH);
+            ctx.lineTo(padL, botY + botH);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(16, 185, 129, 0.14)';
+            ctx.fill();
+
+            // Subplot Titles
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = 'bold 9px Inter, sans-serif';
+            ctx.fillText('Subplot 1: T_DHT22 vs T_Setpoint (°C)', padL + 4, topY + 10);
+            ctx.fillText('Subplot 2: Kecepatan Putaran Blower AC (RPM)', padL + 4, botY + 10);
+        }
+
+        function toggleMobileDashboard() {
+            const body = document.getElementById('dashboard-body');
+            const txt = document.getElementById('toggle-dashboard-text');
+            if (body.classList.contains('hidden')) {
+                body.classList.remove('hidden');
+                body.classList.add('flex');
+                txt.textContent = 'Tutup Panel';
+            } else {
+                body.classList.add('hidden');
+                body.classList.remove('flex');
+                txt.textContent = 'Dashboard IoT';
+            }
+        }
+
+        // ============================================================================
+        // 13. 3D WORLD FLOATING LABELS PROJECTION
+        // ============================================================================
+        function updateFloatingLabelPosition(domId, worldVec) {
+            const el = document.getElementById(domId);
+            if (!el) return;
+            const projected = worldVec.clone().project(camera);
+            if (projected.z > 1) {
+                el.style.opacity = '0';
+                return;
+            }
+            const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(projected.y * 0.5) + 0.5) * window.innerHeight;
+            el.style.opacity = '1';
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+        }
+
+        function updateChairPopupScreenPosition() {
+            if (simState.selectedChairIndex === null) return;
+            const cfg = chairConfigs[simState.selectedChairIndex];
+            const popupWorldPos = cfg.pos.clone().add(new THREE.Vector3(0, 1.88, 0));
+            const projected = popupWorldPos.project(camera);
+            const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(projected.y * 0.5) + 0.5) * window.innerHeight;
+            chairPopupEl.style.left = `${Math.min(window.innerWidth - 150, Math.max(150, x))}px`;
+            chairPopupEl.style.top = `${Math.min(window.innerHeight - 60, Math.max(175, y))}px`;
+        }
+
+        // ============================================================================
+        // 14. MAIN ANIMATION, AERODYNAMIC WIND & THERMAL PHYSICS LOOP
+        // ============================================================================
+        const clock = new THREE.Clock();
+        let physicsTimer = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.1);
+            const elapsed = clock.getElapsedTime();
+
+            // 1. Camera Smooth Presets
+            if (camTransition) {
+                camera.position.lerp(camTransition.pos, dt * 4.5);
+                controls.target.lerp(camTransition.target, dt * 4.5);
+                if (camera.position.distanceTo(camTransition.pos) < 0.08) {
+                    camTransition = null;
+                }
+            }
+            controls.update();
+
+            // 2. Animate Walking Avatars, Laptop Lids & Sliding Glass Door
+            let someoneNearDoor = false;
+
+            chairConfigs.forEach(cfg => {
+                if (cfg.laptopLid) {
+                    const targetLidRot = (cfg.occupied && cfg.state === 'seated') ? -0.32 : 1.52;
+                    cfg.laptopLid.rotation.x += (targetLidRot - cfg.laptopLid.rotation.x) * dt * 6;
+                }
+            });
+
+            for (let i = activeAvatars.length - 1; i >= 0; i--) {
+                const avObj = activeAvatars[i];
+                const mesh = avObj.mesh;
+                const u = mesh.userData;
+
+                if (mesh.position.distanceTo(new THREE.Vector3(-6.06, 0, 2.85)) < 2.7) {
+                    someoneNearDoor = true;
+                }
+
+                if (avObj.mode === 'walking_in' || avObj.mode === 'walking_out') {
+                    const targetWp = avObj.waypoints[avObj.wpIndex];
+                    const dir = new THREE.Vector3().subVectors(targetWp, mesh.position);
+                    dir.y = 0;
+                    const dist = dir.length();
+                    const walkSpeed = 2.75;
+
+                    if (dist < 0.12) {
+                        avObj.wpIndex++;
+                        if (avObj.wpIndex >= avObj.waypoints.length) {
+                            if (avObj.mode === 'walking_in') {
+                                avObj.mode = 'seated';
+                                const seatCfg = chairConfigs[avObj.chairIndex];
+                                seatCfg.state = 'seated';
+                                setAvatarSeatedPose(mesh, seatCfg);
+                                refreshChairPopupIfOpen();
+                            } else {
+                                scene.remove(mesh);
+                                activeAvatars.splice(i, 1);
+                            }
+                            continue;
+                        }
+                    } else {
+                        dir.normalize();
+                        mesh.position.addScaledVector(dir, walkSpeed * dt);
+                        mesh.rotation.y = Math.atan2(dir.x, dir.z);
+                        soundEngine.playFootstep(elapsed);
+
+                        u.walkCycle += dt * 11.5;
+                        const swing = Math.sin(u.walkCycle) * 0.55;
+                        u.leftLeg.rotation.x = swing;
+                        u.rightLeg.rotation.x = -swing;
+                        u.leftArm.rotation.x = -swing * 0.8;
+                        u.rightArm.rotation.x = swing * 0.8;
+                    }
+                } else if (avObj.mode === 'seated') {
+                    const pulse = 1 + Math.sin(elapsed * 3.2 + i) * 0.08;
+                    u.heatAura.scale.set(pulse, pulse, 1);
+                }
+            }
+
+            // Sliding Glass Door Smooth Open/Close + Sound Effect
+            const targetDoor = someoneNearDoor ? 1 : 0;
+            if (someoneNearDoor !== soundEngine.lastDoorStateOpen) {
+                soundEngine.lastDoorStateOpen = someoneNearDoor;
+                soundEngine.playSlidingDoorWhoosh(someoneNearDoor);
+            }
+            simState.doorOpenAmount += (targetDoor - simState.doorOpenAmount) * dt * 6.5;
+            slidingDoorGroup.position.z = 2.85 - simState.doorOpenAmount * 1.75;
+
+            const doorText = document.getElementById('door-status-text');
+            const doorDot = document.getElementById('door-status-dot');
+            if (simState.doorOpenAmount > 0.15) {
+                doorText.textContent = 'Pintu Kaca (Terbuka)';
+                doorDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping';
+            } else {
+                doorText.textContent = 'Pintu Kaca (Tertutup)';
+                doorDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+            }
+
+            // 3. AERODYNAMIC WIND STREAMLINE RIBBONS ANIMATION (FROM AC MOUTH DOWN TO TABLE!)
+            const fanSpeedFactor =
+                simState.acFanSpeed === 'TURBO' ? 3.4 :
+                simState.acFanSpeed === 'HIGH'  ? 2.4 :
+                simState.acFanSpeed === 'MED'   ? 1.55 : 0.85;
+
+            const activeRibbonQuota =
+                simState.acFanSpeed === 'TURBO' ? 16 :
+                simState.acFanSpeed === 'HIGH'  ? 12 :
+                simState.acFanSpeed === 'MED'   ? 8 : 5;
+
+            // Oscillate AC Louver Blade
+            acFlapPivot.rotation.x = 0.34 + Math.sin(elapsed * (1.4 + fanSpeedFactor * 0.5)) * 0.18;
+
+            // Color shifts from icy deep cyan (high cooling) to gentle sky blue (maintenance setpoint)
+            const windHex =
+                simState.acFanSpeed === 'TURBO' ? 0x00f2ff :
+                simState.acFanSpeed === 'HIGH'  ? 0x0ea5e9 :
+                simState.acFanSpeed === 'MED'   ? 0x38bdf8 : 0x7dd3fc;
+
+            nozzleGlowMat.color.setHex(windHex);
+            nozzleGlowMat.opacity = 0.55 + 0.35 * Math.sin(elapsed * 4.0);
+
+            veilMat.color.setHex(windHex);
+            veilMat.opacity = 0.03 * fanSpeedFactor;
+
+            windStreamlines.forEach((stream, idx) => {
+                if (idx < activeRibbonQuota) {
+                    stream.mesh.visible = true;
+                    // Scroll procedural wind streak texture strictly from t=0 (AC Mouth) toward t=1 (Meeting Table)!
+                    stream.texture.offset.x -= dt * 1.15 * fanSpeedFactor * stream.speedFactor;
+                    stream.mesh.material.color.setHex(windHex);
+
+                    const baseOpacity = simState.acFanSpeed === 'LOW' ? 0.55 : 0.88;
+                    stream.mesh.material.opacity = baseOpacity * (0.8 + 0.2 * Math.sin(elapsed * 3.2 + stream.phase));
+                } else {
+                    stream.mesh.visible = false;
+                }
+            });
+
+            // 4. Infrared Signal Wave Rings Animation (ESP32 Panel -> AC Receiver)
+            if (simState.irBeamTimer > 0) {
+                simState.irBeamTimer -= dt;
+                const flash = Math.abs(Math.sin(elapsed * 26));
+                irBeamMat.opacity = 0.65 * flash;
+                espTxLedMat.color.setHex(flash > 0.5 ? 0xf0abfc : 0xd946ef);
+                irDomeMat.color.setHex(0xf0abfc);
+
+                irWaveRings.forEach(rObj => {
+                    const t = ((elapsed * 2.2 + rObj.offset) % 1);
+                    rObj.mesh.position.lerpVectors(anchors.irLedTip, anchors.acIrReceiver, t);
+                    const scale = 0.6 + t * 2.2;
+                    rObj.mesh.scale.set(scale, scale, scale);
+                    rObj.mesh.material.opacity = 0.9 * (1 - t);
+                });
+
+                if (simState.irBeamTimer <= 0) {
+                    irBeamMat.opacity = 0;
+                    irWaveRings.forEach(rObj => rObj.mesh.material.opacity = 0);
+                    espTxLedMat.color.setHex(0x38bdf8);
+                    irDomeMat.color.setHex(0xd946ef);
+
+                    const badge = document.getElementById('ir-tx-badge');
+                    badge.textContent = 'IR TX: STANDBY';
+                    badge.className = 'px-2 py-0.5 rounded-md text-[10px] font-mono-code bg-slate-800 text-slate-400 border border-slate-700 transition';
+                }
+            }
+
+            // 5. CLOSED-LOOP SETPOINT THERMAL PHYSICS UPDATE (Every 250ms)
+            physicsTimer += dt;
+            if (physicsTimer >= 0.25) {
+                physicsTimer = 0;
+
+                const peopleCount = chairConfigs.filter(c => c.occupied).length;
+                const peopleHeatLoad = peopleCount * 0.85; // +0.85°C per person in the meeting room
+
+                // Uncompensated temperature (what the room temp would be without extra AC fan boost)
+                simState.uncompensatedTemp = simState.roomSetpoint + peopleHeatLoad;
+
+                // High-Precision PID AC Cooling Compensation (maintains steady-state delta <= 0.20°C)
+                const fanCoolingEfficiency =
+                    simState.acFanSpeed === 'TURBO' ? 0.971 :
+                    simState.acFanSpeed === 'HIGH'  ? 0.962 :
+                    simState.acFanSpeed === 'MED'   ? 0.935 : 0.0;
+
+                // When 0 people are in the room, target equilibrium is exact Setpoint!
+                // When people enter, PID blower boost clamps steady-state offset to max +0.20°C.
+                let targetRoomTemp = simState.roomSetpoint;
+                if (peopleCount > 0) {
+                    const residualHeat = peopleHeatLoad * (1 - fanCoolingEfficiency);
+                    targetRoomTemp = simState.roomSetpoint + Math.min(0.20, residualHeat);
+                }
+
+                // Responsive closed-loop thermal convergence
+                simState.currentTemp += (targetRoomTemp - simState.currentTemp) * 0.22;
+
+                // Smooth Blower Motor RPM Inertia & Airflow Velocity (m/s)
+                const peopleCountRpmBoost = simState.mode === 'AUTO' ? Math.min(80, peopleCount * 10) : 0;
+                const effectiveTargetRpm = Math.min(1650, simState.targetRpm + peopleCountRpmBoost);
+                simState.currentRpm += (effectiveTargetRpm - simState.currentRpm) * 0.28;
+                simState.airflowVelocity = (simState.currentRpm / 650) * 1.4;
+                soundEngine.updateAcBlowerSound(simState.currentRpm);
+
+                // Humidity dynamics
+                const targetHum = Math.min(78, Math.max(40, 48 + peopleCount * 2.2 - fanSpeedFactor * 1.4));
+                simState.currentHumidity += (targetHum - simState.currentHumidity) * 0.1;
+
+                // Push new data point to MATLAB Scope History
+                matlabHistory.setpoint.push(simState.roomSetpoint);
+                matlabHistory.setpoint.shift();
+                matlabHistory.actualTemp.push(simState.currentTemp);
+                matlabHistory.actualTemp.shift();
+                matlabHistory.uncompTemp.push(simState.uncompensatedTemp);
+                matlabHistory.uncompTemp.shift();
+                matlabHistory.rpm.push(simState.currentRpm);
+                matlabHistory.rpm.shift();
+
+                // Update Dashboard UI (2 decimal places so 0.00°C - 0.20°C precision is clearly visible)
+                const deltaErr = simState.currentTemp - simState.roomSetpoint;
+                document.getElementById('dht-temp-ui').textContent = simState.currentTemp.toFixed(2);
+                document.getElementById('dht-hum-ui').textContent = simState.currentHumidity.toFixed(1);
+                document.getElementById('uncomp-temp-ui').textContent = simState.uncompensatedTemp.toFixed(1) + '°C';
+                document.getElementById('label-dht-val').textContent = `${simState.currentTemp.toFixed(2)}°C / ${Math.round(simState.currentHumidity)}%`;
+
+                // Update MATLAB RPM, m/s & Error Readouts
+                document.getElementById('ac-rpm-ui').textContent = Math.round(simState.currentRpm);
+                document.getElementById('ac-airflow-ui').textContent = simState.airflowVelocity.toFixed(1);
+                document.getElementById('pid-error-ui').textContent = (deltaErr >= 0 ? '+' : '') + deltaErr.toFixed(2);
+                document.getElementById('eta-efficiency-ui').textContent = `η = ${Math.round(fanCoolingEfficiency * 100)}%`;
+
+                const deltaEl = document.getElementById('delta-error-ui');
+                deltaEl.textContent = (deltaErr >= 0 ? '+' : '') + deltaErr.toFixed(2) + '°C';
+
+                const statusPill = document.getElementById('temp-status-pill');
+                if (Math.abs(deltaErr) <= 0.05 && peopleCount === 0) {
+                    statusPill.textContent = 'Stabil di Setpoint';
+                    statusPill.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                    deltaEl.className = 'text-emerald-400 font-semibold';
+                } else if (deltaErr > 0.05) {
+                    statusPill.textContent = `Presisi ≤0.20°C (${Math.round(simState.currentRpm)} RPM)`;
+                    statusPill.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40';
+                    deltaEl.className = 'text-cyan-300 font-semibold';
+                } else {
+                    statusPill.textContent = 'Terkendali AC';
+                    statusPill.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30';
+                    deltaEl.className = 'text-sky-400 font-semibold';
+                }
+
+                // Trigger ESP32 Closed-Loop Setpoint Evaluation & Redraw MATLAB Scope
+                evaluateClosedLoopSetpoint(false);
+                drawMatlabScope();
+                updatePresentationTvCanvas();
+                updatePanelOledCanvas();
+            }
+
+            // 5B. ADVANCED DUST & COLD AIR MIST PARTICLE SIMULATION
+            if (dustParticles) {
+                const pos = dustGeometry.attributes.position.array;
+                for (let i = 0; i < particleCount; i++) {
+                    pos[i * 3] += dustVelocities[i].x * dt * 2;
+                    pos[i * 3 + 1] += Math.sin(elapsed * 0.8 + i) * dt * 0.05;
+                    pos[i * 3 + 2] += dustVelocities[i].z * dt * 2;
+                    if (pos[i * 3] > 6) pos[i * 3] = -6;
+                    if (pos[i * 3] < -6) pos[i * 3] = 6;
+                    if (pos[i * 3 + 2] > 5.5) pos[i * 3 + 2] = -5.5;
+                    if (pos[i * 3 + 2] < -5.5) pos[i * 3 + 2] = 5.5;
+                }
+                dustGeometry.attributes.position.needsUpdate = true;
+            }
+
+            if (mistParticles) {
+                const mpos = mistGeometry.attributes.position.array;
+                const mistSpeed = (simState.acFanSpeed === 'TURBO' ? 3.5 : simState.acFanSpeed === 'HIGH' ? 2.5 : simState.acFanSpeed === 'MED' ? 1.6 : 1.0);
+                for (let i = 0; i < mistCount; i++) {
+                    mistData[i].life += dt * 0.45 * mistData[i].speed * (mistSpeed / 1.5);
+                    if (mistData[i].life > 1.0) {
+                        mistData[i].life = 0;
+                        mpos[i * 3] = anchors.acFlapOrigin.x + (Math.random() - 0.5) * 2.8;
+                        mpos[i * 3 + 1] = anchors.acFlapOrigin.y;
+                        mpos[i * 3 + 2] = anchors.acFlapOrigin.z;
+                    } else {
+                        const t = mistData[i].life;
+                        mpos[i * 3] += mistData[i].drift * dt;
+                        mpos[i * 3 + 1] = anchors.acFlapOrigin.y - t * 2.5;
+                        mpos[i * 3 + 2] = anchors.acFlapOrigin.z + t * 5.2;
+                    }
+                }
+                mistGeometry.attributes.position.needsUpdate = true;
+            }
+
+            activeAvatars.forEach((av, idx) => {
+                if (av.mode === 'seated') {
+                    const breath = Math.sin(elapsed * 2.0 + idx) * 0.02;
+                    av.mesh.position.y = -0.16 + breath;
+                }
+            });
+
+            // 6. Update Floating 3D Labels & Chair Popup
+            updateFloatingLabelPosition('label-ac', anchors.acUnit);
+            updateFloatingLabelPosition('label-panel', anchors.panelBox);
+            updateFloatingLabelPosition('label-dht', anchors.dhtSensor);
+            updateFloatingLabelPosition('label-door', anchors.doorCenter);
+            updateChairPopupScreenPosition();
+
+            if (composer) {
+                composer.render();
+            } else {
+                renderer.render(scene, camera);
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            const mobile = window.innerWidth < 768;
+            camera.fov = mobile ? 52 : 40;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        window.onload = function () {
+            syncAcControlsUI();
+            drawMatlabScope();
+            updatePresentationTvCanvas();
+            updatePanelOledCanvas();
+            animate();
+        };
+    </script>
+</body>
+</html>
